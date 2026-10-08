@@ -179,6 +179,12 @@ async function runScenario() {
             settings.set_string('panel-display', 'bars-and-text');
         }
         await captureMenu(indicator, shotPath);
+        if (env('OMP_USAGE_TEST_EXPECT_FULL_MENU')) {
+            const scroll = indicator.menu.box.get_children().find(a => a.has_style_class_name?.('oh-my-usage-scroll'));
+            const adj = scroll?.vadjustment;
+            check(adj && adj.upper <= adj.page_size,
+                `account list fits without scrolling (content ${adj?.upper}px, view ${adj?.page_size}px)`);
+        }
         const expectAlertRows = env('OMP_USAGE_TEST_EXPECT_ALERT_ROWS');
         if (expectAlertRows) {
             const titles = labelsIn(indicator.menu.box, 'oh-my-usage-alert-title');

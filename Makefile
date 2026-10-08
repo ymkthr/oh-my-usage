@@ -2,7 +2,7 @@ UUID := oh-my-usage@ymkthr.github.io
 DIST := dist
 ZIP  := $(DIST)/$(UUID).shell-extension.zip
 
-.PHONY: test test-unit test-shell pack install uninstall clean
+.PHONY: test test-unit test-shell screenshot pack install uninstall clean
 
 test: test-unit test-shell
 
@@ -13,6 +13,9 @@ test-unit:
 
 test-shell:
 	tests/shell/run.sh
+
+screenshot:
+	tests/shell/run.sh readme
 
 pack:
 	tests/shell/pack.sh $(DIST)

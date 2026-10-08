@@ -22,6 +22,7 @@ until_done() {
 
 status=0
 for scenario in "${scenarios[@]}"; do
+    tool_args=()
     case $scenario in
         success)
             env_args=(OMP_USAGE_TEST_MODE=success
@@ -30,6 +31,12 @@ for scenario in "${scenarios[@]}"; do
                 OMP_USAGE_TEST_EXPECT_OUTLINE='["# Anthropic","- work@example.com","# OpenAI Codex","- work@example.com","- personal@example.com","# OpenCode Go","- account 1"]'
                 OMP_USAGE_TEST_EXPECT_ALERT='⚠ Go 1mo 93% +1'
                 OMP_USAGE_TEST_EXPECT_ALERT_ROWS='["OpenCode Go · Monthly","OpenAI Codex · plus · 7 days"]') ;;
+        readme)
+            tool_args=(--wrap "$root/tests/shell/tall-monitor.sh")
+            env_args=(OMP_USAGE_TEST_MODE=success
+                OMP_USAGE_TEST_OMP="$fixtures/fake-omp"
+                OMP_USAGE_TEST_EXPECT_PANEL='^5h 5% · 7d 12%$'
+                OMP_USAGE_TEST_EXPECT_FULL_MENU=1) ;;
         fail-stale | disable-midfetch | prefs)
             env_args=(OMP_USAGE_TEST_MODE="$scenario"
                 OMP_USAGE_TEST_OMP="$fixtures/fake-omp"
@@ -45,12 +52,13 @@ for scenario in "${scenarios[@]}"; do
     log=$out/$scenario.log
     echo "== $scenario"
     if env "${env_args[@]}" OMP_USAGE_TEST_SHOT="$out/$scenario.png" \
-        timeout 180 dbus-run-session -- gnome-shell-test-tool --headless --disable-animations \
+        timeout 180 dbus-run-session -- gnome-shell-test-tool --headless --disable-animations "${tool_args[@]}" \
             --extension "$zip" "$root/tests/shell/screenshot.js" >"$log" 2>&1 \
         && grep -q 'oh-my-usage test: done' "$log" \
         && ! until_done "$log" | grep -E "$problems" | grep -qv "$noise"; then
         grep -E 'oh-my-usage test:' "$log" | sed 's/^.*oh-my-usage test: /   /'
         echo "   PASS"
+        [[ $scenario == readme ]] && cp "$out/readme-menu.png" "$root/docs/menu.png"
     else
         until_done "$log" | grep -E "oh-my-usage test:|$problems" | grep -v "$noise" | sed 's/^/   /' || true
         echo "   FAIL  (see $log)"
