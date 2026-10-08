@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+import json
+import os
+import sys
+import time
+
+argv = sys.argv[1:]
+log_path = os.environ.get("FAKE_OMP_LOG")
+if log_path:
+    with open(log_path, "a", encoding="utf-8") as log:
+        log.write(" ".join(argv) + "\n")
+
+mode = os.environ.get("FAKE_OMP_MODE", "ok")
+if mode == "hang":
+    time.sleep(1000)
+if mode == "fail":
+    sys.stderr.write(
+        "AuthBrokerError: Auth broker request failed after 2 attempt(s)\n"
+        "    at fetchWithRetry (/$bunfs/root/omp:12:345)\n"
+    )
+    sys.exit(1)
+
+if argv == ["usage", "invalidate"]:
+    sys.exit(0)
+if argv != ["usage", "--json"]:
+    sys.stderr.write(f"fake-omp: unsupported argv {argv!r}\n")
+    sys.exit(2)
+
+fixture = os.path.join(os.path.dirname(os.path.realpath(__file__)), "usage.json")
+with open(fixture, encoding="utf-8") as f:
+    data = json.load(f)
+
+shift = int(time.time() * 1000) - data["generatedAt"]
+
+
+def rebase(node):
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key in ("generatedAt", "fetchedAt", "resetsAt") and isinstance(value, (int, float)):
+                node[key] = int(value + shift)
+            else:
+                rebase(value)
+    elif isinstance(node, list):
+        for item in node:
+            rebase(item)
+
+
+rebase(data)
+json.dump(data, sys.stdout, indent=2)
+sys.stdout.write("\n")
