@@ -1,0 +1,96 @@
+/* St ignores `opacity`, so muted text is an rgba() colour. */
+
+.omp-usage-panel {
+    spacing: 6px;
+}
+.omp-usage-panel-bars {
+    spacing: 2px;
+}
+.omp-usage-panel-bar {
+    width: 16px;
+    height: 5px;
+}
+.omp-usage-panel-text,
+.omp-usage-panel-alert {
+    font-feature-settings: "tnum";
+}
+.omp-usage-panel-alert {
+    font-weight: bold;
+}
+.omp-usage-panel-text.stale {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.omp-usage-bar {
+    background-color: rgba(128, 128, 128, 0.3);
+    border-radius: 3px;
+}
+.omp-usage-bar-fill {
+    background-color: -st-accent-color;
+    border-radius: 3px;
+}
+.omp-usage-bar-fill.level-warning {
+    background-color: #ff7800;
+}
+.omp-usage-bar-fill.level-error {
+    background-color: #e01b24;
+}
+
+.omp-usage-header {
+    spacing: 12px;
+}
+.omp-usage-status,
+.omp-usage-section-subtitle {
+    color: rgba(128, 128, 128, 1);
+}
+.omp-usage-row-detail.level-warning,
+.omp-usage-alert-detail.level-warning,
+.omp-usage-panel-text.level-warning,
+.omp-usage-panel-alert.level-warning {
+    color: #ffa348;
+}
+.omp-usage-status.level-error,
+.omp-usage-row-detail.level-error,
+.omp-usage-alert-detail.level-error,
+.omp-usage-panel-text.level-error,
+.omp-usage-panel-alert.level-error {
+    color: #ff6b6b;
+}
+.omp-usage-header-title,
+.omp-usage-section-title {
+    font-weight: bold;
+}
+.omp-usage-notice {
+    max-width: 360px;
+}
+.omp-usage-section-subtitle {
+    font-size: 0.9em;
+}
+.omp-usage-badge {
+    font-size: 0.85em;
+    padding: 0 6px;
+    border-radius: 99px;
+    background-color: rgba(128, 128, 128, 0.2);
+}
+.omp-usage-section-body {
+    spacing: 4px;
+}
+.popup-menu-item.omp-usage-section-body-item {
+    padding-top: 0;
+}
+.omp-usage-row {
+    spacing: 10px;
+    min-width: 370px;
+}
+.omp-usage-row-label {
+    width: 110px;
+}
+.omp-usage-row-bar {
+    height: 6px;
+}
+.omp-usage-row-detail,
+.omp-usage-alert-detail {
+    width: 110px;
+    text-align: right;
+    font-feature-settings: "tnum";
+}

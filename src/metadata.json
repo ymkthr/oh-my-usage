@@ -1,0 +1,10 @@
+{
+  "uuid": "omp-usage@ymkthr.github.io",
+  "name": "omp usage",
+  "description": "Shows LLM provider usage limits from `omp usage` in the top panel",
+  "shell-version": ["50"],
+  "settings-schema": "org.gnome.shell.extensions.omp-usage",
+  "gettext-domain": "omp-usage",
+  "url": "https://github.com/ymkthr/gnome-omp-usage",
+  "version-name": "0.1.0"
+}

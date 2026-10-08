@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="omp-usage">
+  <enum id="org.gnome.shell.extensions.omp-usage.panel-display">
+    <value nick="bars-and-text" value="0"/>
+    <value nick="bars-only" value="1"/>
+    <value nick="text-only" value="2"/>
+  </enum>
+
+  <schema id="org.gnome.shell.extensions.omp-usage"
+          path="/org/gnome/shell/extensions/omp-usage/">
+    <key name="omp-path" type="s">
+      <default>''</default>
+      <summary>Path to the omp binary</summary>
+      <description>Absolute path. Empty uses ~/.bun/bin/omp (the Shell's PATH does not include it).</description>
+    </key>
+    <key name="refresh-interval" type="u">
+      <default>300</default>
+      <range min="30" max="3600"/>
+      <summary>Refresh interval (seconds)</summary>
+      <description>How often to run `omp usage --json`. The timer never runs `omp usage invalidate`.</description>
+    </key>
+    <key name="panel-display" enum="org.gnome.shell.extensions.omp-usage.panel-display">
+      <default>'bars-and-text'</default>
+      <summary>What the top bar shows</summary>
+      <description>Two stacked mini bars (5h / 7d of the primary account), the compact text, or both.</description>
+    </key>
+    <key name="primary-account" type="s">
+      <default>''</default>
+      <summary>Account shown in the top bar</summary>
+      <description>An account key such as anthropic:me@example.com, chosen by activating an account title in the menu. Empty selects the first account omp reports.</description>
+    </key>
+  </schema>
+</schemalist>
