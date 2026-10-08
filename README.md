@@ -1,6 +1,8 @@
-# gnome-omp-usage
+# oh-my-usage
 
 [omp](https://github.com/can1357/oh-my-pi) の `omp usage` が返す LLM プロバイダーの利用上限を、GNOME のトップバーに出す GNOME Shell 拡張。macOS の CodexBar に近い見た目で、omp に登録した全アカウントの使用率とリセットまでの残り時間を一覧できる。
+
+oh-my-pi とは関係のない個人の拡張で、omp をコマンドとして呼び出しているだけ。
 
 ![トップバーとドロップダウン](docs/menu.png)
 
@@ -26,22 +28,22 @@
 ## インストールして再ログインする
 
 ```sh
-ghq get ymkthr/gnome-omp-usage
-cd "$(ghq root)/github.com/ymkthr/gnome-omp-usage"
+ghq get ymkthr/oh-my-usage
+cd "$(ghq root)/github.com/ymkthr/oh-my-usage"
 make install
 ```
 
 `make install` は `dist/` に拡張の zip を作り、`gnome-extensions install --force` で `~/.local/share/gnome-shell/extensions/` に入れる。Wayland の GNOME Shell は動作中に増えた拡張を読み込まないので、一度ログアウトしてログインし直してから有効にする。
 
 ```sh
-gnome-extensions enable omp-usage@ymkthr.github.io
+gnome-extensions enable oh-my-usage@ymkthr.github.io
 ```
 
 コードを変えたときも、`make install` のあとに再ログインが要る。
 
 ## 設定は 4 項目
 
-メニュー下部の **Settings…** か `gnome-extensions prefs omp-usage@ymkthr.github.io` で開く。
+メニュー下部の **Settings…** か `gnome-extensions prefs oh-my-usage@ymkthr.github.io` で開く。
 
 | キー | 既定値 | 内容 |
 |---|---|---|
@@ -75,7 +77,7 @@ tests/shell/run.sh real    # 本物の omp で同じ確認をする
 
 omp の代わりには `tests/fixtures/fake-omp` を使う。`tests/fixtures/usage.json` の時刻を現在時刻にずらして返す。`FAKE_OMP_MODE=fail` で終了コード 1 と空の標準出力を返し、`hang` で応答しなくなる。
 
-シナリオが `omp-usage test:` の行を 1 つも出さずに失敗し、ログに `Failed to activate service 'org.freedesktop.secrets': timed out` があれば、テスト用 D-Bus セッションの起動待ちで時間切れになっている。拡張の不具合ではないので、そのシナリオだけ再実行する。
+シナリオが `oh-my-usage test:` の行を 1 つも出さずに失敗し、ログに `Failed to activate service 'org.freedesktop.secrets': timed out` があれば、テスト用 D-Bus セッションの起動待ちで時間切れになっている。拡張の不具合ではないので、そのシナリオだけ再実行する。
 
 ## ライセンス
 

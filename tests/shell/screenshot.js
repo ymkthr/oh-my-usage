@@ -7,7 +7,7 @@ import * as Scripting from 'resource:///org/gnome/shell/ui/scripting.js';
 import {PopupAnimation} from 'resource:///org/gnome/shell/ui/boxpointer.js';
 import {ExtensionState} from 'resource:///org/gnome/shell/misc/extensionUtils.js';
 
-const UUID = 'omp-usage@ymkthr.github.io';
+const UUID = 'oh-my-usage@ymkthr.github.io';
 
 Gio._promisify(Shell.Screenshot.prototype, 'screenshot', 'screenshot_finish');
 Gio._promisify(Shell.Screenshot.prototype, 'screenshot_area', 'screenshot_area_finish');
@@ -22,8 +22,8 @@ function env(name, fallback = null) {
 
 function check(condition, what) {
     if (!condition)
-        throw new Error(`omp-usage test: FAIL ${what}`);
-    log(`omp-usage test: ok ${what}`);
+        throw new Error(`oh-my-usage test: FAIL ${what}`);
+    log(`oh-my-usage test: ok ${what}`);
 }
 
 function labelsIn(actor, styleClass) {
@@ -49,7 +49,7 @@ async function waitFor(what, predicate, timeoutMs = 30000) {
             return;
         await Scripting.sleep(250);
     }
-    throw new Error(`omp-usage test: FAIL timeout waiting for ${what}`);
+    throw new Error(`oh-my-usage test: FAIL timeout waiting for ${what}`);
 }
 
 async function shoot(path, area) {
@@ -116,7 +116,7 @@ async function nameHasOwner(name) {
 }
 
 function prefsWindow() {
-    return global.display.list_all_windows().find(w => w.get_title() === 'omp usage') ?? null;
+    return global.display.list_all_windows().find(w => w.get_title() === 'oh-my-usage') ?? null;
 }
 
 async function shootWindow(path) {
@@ -137,7 +137,7 @@ async function closePrefs(what) {
 
 export async function run() {
     await runScenario();
-    log('omp-usage test: done');
+    log('oh-my-usage test: done');
 }
 
 async function runScenario() {
@@ -154,7 +154,7 @@ async function runScenario() {
     check(true, `extension ${UUID} is active`);
     const settings = extension.stateObj.getSettings();
     const mode = env('OMP_USAGE_TEST_MODE', 'success');
-    const shotPath = env('OMP_USAGE_TEST_SHOT', `/tmp/omp-usage-${mode}.png`);
+    const shotPath = env('OMP_USAGE_TEST_SHOT', `/tmp/oh-my-usage-${mode}.png`);
 
     const ompPath = env('OMP_USAGE_TEST_OMP');
     if (ompPath)
@@ -163,25 +163,25 @@ async function runScenario() {
     let indicator = indicatorOf();
     const expectPanel = new RegExp(env('OMP_USAGE_TEST_EXPECT_PANEL', '^5h \\d+% · 7d \\d+%$'));
     await waitFor(`panel label matching ${expectPanel}`,
-        () => textsIn(indicator, 'omp-usage-panel-text').some(t => expectPanel.test(t)));
-    check(true, `panel label is "${textsIn(indicator, 'omp-usage-panel-text')[0]}"`);
+        () => textsIn(indicator, 'oh-my-usage-panel-text').some(t => expectPanel.test(t)));
+    check(true, `panel label is "${textsIn(indicator, 'oh-my-usage-panel-text')[0]}"`);
 
     if (mode === 'success') {
         const expectAlert = env('OMP_USAGE_TEST_EXPECT_ALERT');
         if (expectAlert) {
-            const [alert] = labelsIn(indicator, 'omp-usage-panel-alert');
+            const [alert] = labelsIn(indicator, 'oh-my-usage-panel-alert');
             check(alert?.visible && alert.text === expectAlert && alert.has_style_class_name('level-error'),
                 `panel alert is "${alert?.text}" in the error colour`);
             settings.set_string('panel-display', 'bars-only');
             await Scripting.sleep(300);
-            check(alert.visible && !labelsIn(indicator, 'omp-usage-panel-text')[0].visible,
+            check(alert.visible && !labelsIn(indicator, 'oh-my-usage-panel-text')[0].visible,
                 'panel alert stays visible when the display mode hides the text');
             settings.set_string('panel-display', 'bars-and-text');
         }
         await captureMenu(indicator, shotPath);
         const expectAlertRows = env('OMP_USAGE_TEST_EXPECT_ALERT_ROWS');
         if (expectAlertRows) {
-            const titles = labelsIn(indicator.menu.box, 'omp-usage-alert-title');
+            const titles = labelsIn(indicator.menu.box, 'oh-my-usage-alert-title');
             const rows = titles.map(t => t.text);
             check(JSON.stringify(rows) === expectAlertRows, `dropdown alert rows are ${JSON.stringify(rows)}`);
             const menuBottom = indicator.menu.actor.get_transformed_position()[1] +
@@ -194,10 +194,10 @@ async function runScenario() {
         if (expectMenu) {
             const re = new RegExp(expectMenu);
             const texts = [
-                ...textsIn(indicator.menu.box, 'omp-usage-section-title'),
-                ...textsIn(indicator.menu.box, 'omp-usage-row-label'),
-                ...textsIn(indicator.menu.box, 'omp-usage-row-detail'),
-                ...textsIn(indicator.menu.box, 'omp-usage-status'),
+                ...textsIn(indicator.menu.box, 'oh-my-usage-section-title'),
+                ...textsIn(indicator.menu.box, 'oh-my-usage-row-label'),
+                ...textsIn(indicator.menu.box, 'oh-my-usage-row-detail'),
+                ...textsIn(indicator.menu.box, 'oh-my-usage-status'),
             ];
             check(texts.some(t => re.test(t)), `a dropdown label matches ${re} (saw ${JSON.stringify(texts)})`);
         }
@@ -206,14 +206,14 @@ async function runScenario() {
     }
 
     if (mode === 'fail-stale') {
-        const before = textsIn(indicator, 'omp-usage-panel-text')[0];
+        const before = textsIn(indicator, 'oh-my-usage-panel-text')[0];
         GLib.setenv('FAKE_OMP_MODE', 'fail', true);
         indicator.menu.open(PopupAnimation.NONE);
         await waitFor('stale header after the menu-open refresh fails',
-            () => textsIn(indicator.menu.box, 'omp-usage-status').some(t => /update failed/.test(t)));
-        const after = textsIn(indicator, 'omp-usage-panel-text')[0];
+            () => textsIn(indicator.menu.box, 'oh-my-usage-status').some(t => /update failed/.test(t)));
+        const after = textsIn(indicator, 'oh-my-usage-panel-text')[0];
         check(after === before, `panel keeps the last good numbers (${after})`);
-        check(labelsIn(indicator, 'omp-usage-panel-text')[0].has_style_class_name('stale'),
+        check(labelsIn(indicator, 'oh-my-usage-panel-text')[0].has_style_class_name('stale'),
             'panel label carries the stale class');
         await captureMenu(indicator, shotPath);
         indicator.menu.close(PopupAnimation.NONE);
@@ -235,7 +235,7 @@ async function runScenario() {
         Main.extensionManager.enableExtension(UUID);
         await waitFor('extension re-enabled', () => extension.state === ExtensionState.ACTIVE);
         indicator = indicatorOf();
-        check(textsIn(indicator, 'omp-usage-panel-text').length === 1, 'indicator rebuilt after re-enable');
+        check(textsIn(indicator, 'oh-my-usage-panel-text').length === 1, 'indicator rebuilt after re-enable');
         return;
     }
 
@@ -253,7 +253,7 @@ async function runScenario() {
         await Scripting.sleep(2000);
         await shootWindow(shotPath.replace(/\.png$/, '-prefs-reopened.png'));
         await closePrefs('reopened prefs');
-        const panelText = textsIn(indicator, 'omp-usage-panel-text')[0];
+        const panelText = textsIn(indicator, 'oh-my-usage-panel-text')[0];
         check(settings.get_string('primary-account') === 'opencode-go:1' &&
             settings.get_uint('refresh-interval') === 600,
         `settings written by the shell survive the open prefs window (primary=${
@@ -263,5 +263,5 @@ async function runScenario() {
         return;
     }
 
-    throw new Error(`omp-usage test: FAIL unknown mode ${mode}`);
+    throw new Error(`oh-my-usage test: FAIL unknown mode ${mode}`);
 }

@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<schemalist gettext-domain="omp-usage">
-  <enum id="org.gnome.shell.extensions.omp-usage.panel-display">
+<schemalist gettext-domain="oh-my-usage">
+  <enum id="org.gnome.shell.extensions.oh-my-usage.panel-display">
     <value nick="bars-and-text" value="0"/>
     <value nick="bars-only" value="1"/>
     <value nick="text-only" value="2"/>
   </enum>
 
-  <schema id="org.gnome.shell.extensions.omp-usage"
-          path="/org/gnome/shell/extensions/omp-usage/">
+  <schema id="org.gnome.shell.extensions.oh-my-usage"
+          path="/org/gnome/shell/extensions/oh-my-usage/">
     <key name="omp-path" type="s">
       <default>''</default>
       <summary>Path to the omp binary</summary>
@@ -19,7 +19,7 @@
       <summary>Refresh interval (seconds)</summary>
       <description>How often to run `omp usage --json`. The timer never runs `omp usage invalidate`.</description>
     </key>
-    <key name="panel-display" enum="org.gnome.shell.extensions.omp-usage.panel-display">
+    <key name="panel-display" enum="org.gnome.shell.extensions.oh-my-usage.panel-display">
       <default>'bars-and-text'</default>
       <summary>What the top bar shows</summary>
       <description>Two stacked mini bars (5h / 7d of the primary account), the compact text, or both.</description>

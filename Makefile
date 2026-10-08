@@ -1,4 +1,4 @@
-UUID := omp-usage@ymkthr.github.io
+UUID := oh-my-usage@ymkthr.github.io
 DIST := dist
 ZIP  := $(DIST)/$(UUID).shell-extension.zip
 

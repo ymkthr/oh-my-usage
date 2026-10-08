@@ -15,4 +15,4 @@ for file in "$root"/src/*.js; do
 done
 
 gnome-extensions pack --force --out-dir "$out" "${extra[@]}" "$root/src" >&2
-echo "$out/omp-usage@ymkthr.github.io.shell-extension.zip"
+echo "$out/oh-my-usage@ymkthr.github.io.shell-extension.zip"

@@ -23,18 +23,18 @@ export class UsageBar extends St.Widget {
         GObject.registerClass(this);
     }
 
-    #fill = new St.Widget({style_class: 'omp-usage-bar-fill'});
+    #fill = new St.Widget({style_class: 'oh-my-usage-bar-fill'});
     #fraction = 0;
 
     /** @param {object} params */
     constructor(params) {
-        super({...params, style_class: `omp-usage-bar ${params.style_class}`});
+        super({...params, style_class: `oh-my-usage-bar ${params.style_class}`});
         this.add_child(this.#fill);
     }
 
     /** @param {BarView} bar */
     setBar({fraction, level}) {
-        this.#fill.style_class = `omp-usage-bar-fill level-${level}`;
+        this.#fill.style_class = `oh-my-usage-bar-fill level-${level}`;
         if (fraction !== this.#fraction) {
             this.#fraction = fraction;
             this.queue_relayout();
@@ -106,16 +106,16 @@ export class Indicator extends PanelMenu.Button {
     }
 
     #buildPanel() {
-        const box = new St.BoxLayout({style_class: 'omp-usage-panel'});
+        const box = new St.BoxLayout({style_class: 'oh-my-usage-panel'});
         this.#panelBarsBox = new St.BoxLayout({
             orientation: Clutter.Orientation.VERTICAL,
-            style_class: 'omp-usage-panel-bars',
+            style_class: 'oh-my-usage-panel-bars',
             y_align: Clutter.ActorAlign.CENTER,
         });
-        this.#panelBars = [0, 1].map(() => new UsageBar({style_class: 'omp-usage-panel-bar'}));
+        this.#panelBars = [0, 1].map(() => new UsageBar({style_class: 'oh-my-usage-panel-bar'}));
         this.#panelBars.forEach(bar => this.#panelBarsBox.add_child(bar));
         this.#panelLabel = new St.Label({
-            style_class: 'omp-usage-panel-text',
+            style_class: 'oh-my-usage-panel-text',
             y_align: Clutter.ActorAlign.CENTER,
         });
         this.#panelAlert = new St.Label({y_align: Clutter.ActorAlign.CENTER});
@@ -130,16 +130,16 @@ export class Indicator extends PanelMenu.Button {
         const header = new PopupMenu.PopupBaseMenuItem({
             reactive: false,
             can_focus: false,
-            style_class: 'omp-usage-header',
+            style_class: 'oh-my-usage-header',
         });
         header.add_child(new St.Label({
             text: _('LLM usage'),
-            style_class: 'omp-usage-header-title',
+            style_class: 'oh-my-usage-header-title',
             x_expand: true,
             y_align: Clutter.ActorAlign.CENTER,
         }));
         this.#statusLabel = new St.Label({
-            style_class: 'omp-usage-status',
+            style_class: 'oh-my-usage-status',
             y_align: Clutter.ActorAlign.CENTER,
         });
         header.add_child(this.#statusLabel);
@@ -158,7 +158,7 @@ export class Indicator extends PanelMenu.Button {
         // has already wired the section before its actor moves, and PopupMenu
         // finds sections for separator visibility through `_delegate`.
         const scroll = new St.ScrollView({
-            style_class: 'omp-usage-scroll',
+            style_class: 'oh-my-usage-scroll',
             hscrollbar_policy: St.PolicyType.NEVER,
             vscrollbar_policy: St.PolicyType.AUTOMATIC,
             overlay_scrollbars: true,
@@ -191,7 +191,7 @@ export class Indicator extends PanelMenu.Button {
         this.#applyPanel(view.panel);
         this.#applyAlerts(view.alerts);
         this.#statusLabel.text = view.status;
-        this.#statusLabel.style_class = `omp-usage-status level-${view.statusLevel}`;
+        this.#statusLabel.style_class = `oh-my-usage-status level-${view.statusLevel}`;
 
         this.#sections.removeAll();
         this.#titleItems.clear();
@@ -225,12 +225,12 @@ export class Indicator extends PanelMenu.Button {
                 bar.setBar(panel.bars[i]);
         });
         this.#panelLabel.text = panel.text;
-        this.#panelLabel.style_class = `omp-usage-panel-text level-${panel.level}${panel.stale ? ' stale' : ''}`;
+        this.#panelLabel.style_class = `oh-my-usage-panel-text level-${panel.level}${panel.stale ? ' stale' : ''}`;
         this.#syncPanelDisplay();
         this.#panelAlert.visible = panel.alert !== null;
         if (panel.alert !== null) {
             this.#panelAlert.text = panel.alert.text;
-            this.#panelAlert.style_class = `omp-usage-panel-alert level-${panel.alert.level}`;
+            this.#panelAlert.style_class = `oh-my-usage-panel-alert level-${panel.alert.level}`;
         }
     }
 
@@ -249,14 +249,14 @@ export class Indicator extends PanelMenu.Button {
         title.setOrnament(ornamentOf(section));
         title.add_child(new St.Label({
             text: section.title,
-            style_class: 'omp-usage-section-title',
+            style_class: 'oh-my-usage-section-title',
             x_expand: true,
             y_align: Clutter.ActorAlign.CENTER,
         }));
         if (section.badge !== null) {
             title.add_child(new St.Label({
                 text: section.badge,
-                style_class: 'omp-usage-badge',
+                style_class: 'oh-my-usage-badge',
                 y_align: Clutter.ActorAlign.CENTER,
             }));
         }
@@ -267,15 +267,15 @@ export class Indicator extends PanelMenu.Button {
         const body = new PopupMenu.PopupBaseMenuItem({
             reactive: false,
             can_focus: false,
-            style_class: 'omp-usage-section-body-item',
+            style_class: 'oh-my-usage-section-body-item',
         });
         body.add_child(ornamentWidthSpacer());
         const column = new St.BoxLayout({
             orientation: Clutter.Orientation.VERTICAL,
-            style_class: 'omp-usage-section-body',
+            style_class: 'oh-my-usage-section-body',
             x_expand: true,
         });
-        column.add_child(new St.Label({text: section.subtitle, style_class: 'omp-usage-section-subtitle'}));
+        column.add_child(new St.Label({text: section.subtitle, style_class: 'oh-my-usage-section-subtitle'}));
         for (const row of section.rows)
             column.add_child(rowLine(row));
         body.add_child(column);
@@ -305,14 +305,14 @@ function ornamentWidthSpacer() {
  * @returns {St.BoxLayout}
  */
 function rowLine(row) {
-    const line = new St.BoxLayout({style_class: 'omp-usage-row'});
+    const line = new St.BoxLayout({style_class: 'oh-my-usage-row'});
     line.add_child(new St.Label({
         text: row.label,
-        style_class: 'omp-usage-row-label',
+        style_class: 'oh-my-usage-row-label',
         y_align: Clutter.ActorAlign.CENTER,
     }));
     const bar = new UsageBar({
-        style_class: 'omp-usage-row-bar',
+        style_class: 'oh-my-usage-row-bar',
         x_expand: true,
         y_align: Clutter.ActorAlign.CENTER,
     });
@@ -320,7 +320,7 @@ function rowLine(row) {
     line.add_child(bar);
     line.add_child(new St.Label({
         text: row.detail,
-        style_class: `omp-usage-row-detail level-${row.level}`,
+        style_class: `oh-my-usage-row-detail level-${row.level}`,
         y_align: Clutter.ActorAlign.CENTER,
     }));
     return line;
@@ -335,13 +335,13 @@ function alertItem(alert) {
     item.add_child(ornamentWidthSpacer());
     item.add_child(new St.Label({
         text: `${alert.title} · ${alert.label}`,
-        style_class: 'omp-usage-alert-title',
+        style_class: 'oh-my-usage-alert-title',
         x_expand: true,
         y_align: Clutter.ActorAlign.CENTER,
     }));
     item.add_child(new St.Label({
         text: alert.detail,
-        style_class: `omp-usage-alert-detail level-${alert.level}`,
+        style_class: `oh-my-usage-alert-detail level-${alert.level}`,
         y_align: Clutter.ActorAlign.CENTER,
     }));
     return item;
@@ -353,7 +353,7 @@ function alertItem(alert) {
  */
 function noticeItem(notice) {
     const item = new PopupMenu.PopupMenuItem(notice, {reactive: false, can_focus: false});
-    item.label.add_style_class_name('omp-usage-notice');
+    item.label.add_style_class_name('oh-my-usage-notice');
     item.label.clutter_text.line_wrap = true;
     return item;
 }

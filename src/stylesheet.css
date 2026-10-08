@@ -1,95 +1,95 @@
 /* St ignores `opacity`, so muted text is an rgba() colour. */
 
-.omp-usage-panel {
+.oh-my-usage-panel {
     spacing: 6px;
 }
-.omp-usage-panel-bars {
+.oh-my-usage-panel-bars {
     spacing: 2px;
 }
-.omp-usage-panel-bar {
+.oh-my-usage-panel-bar {
     width: 16px;
     height: 5px;
 }
-.omp-usage-panel-text,
-.omp-usage-panel-alert {
+.oh-my-usage-panel-text,
+.oh-my-usage-panel-alert {
     font-feature-settings: "tnum";
 }
-.omp-usage-panel-alert {
+.oh-my-usage-panel-alert {
     font-weight: bold;
 }
-.omp-usage-panel-text.stale {
+.oh-my-usage-panel-text.stale {
     color: rgba(255, 255, 255, 0.6);
 }
 
-.omp-usage-bar {
+.oh-my-usage-bar {
     background-color: rgba(128, 128, 128, 0.3);
     border-radius: 3px;
 }
-.omp-usage-bar-fill {
+.oh-my-usage-bar-fill {
     background-color: -st-accent-color;
     border-radius: 3px;
 }
-.omp-usage-bar-fill.level-warning {
+.oh-my-usage-bar-fill.level-warning {
     background-color: #ff7800;
 }
-.omp-usage-bar-fill.level-error {
+.oh-my-usage-bar-fill.level-error {
     background-color: #e01b24;
 }
 
-.omp-usage-header {
+.oh-my-usage-header {
     spacing: 12px;
 }
-.omp-usage-status,
-.omp-usage-section-subtitle {
+.oh-my-usage-status,
+.oh-my-usage-section-subtitle {
     color: rgba(128, 128, 128, 1);
 }
-.omp-usage-row-detail.level-warning,
-.omp-usage-alert-detail.level-warning,
-.omp-usage-panel-text.level-warning,
-.omp-usage-panel-alert.level-warning {
+.oh-my-usage-row-detail.level-warning,
+.oh-my-usage-alert-detail.level-warning,
+.oh-my-usage-panel-text.level-warning,
+.oh-my-usage-panel-alert.level-warning {
     color: #ffa348;
 }
-.omp-usage-status.level-error,
-.omp-usage-row-detail.level-error,
-.omp-usage-alert-detail.level-error,
-.omp-usage-panel-text.level-error,
-.omp-usage-panel-alert.level-error {
+.oh-my-usage-status.level-error,
+.oh-my-usage-row-detail.level-error,
+.oh-my-usage-alert-detail.level-error,
+.oh-my-usage-panel-text.level-error,
+.oh-my-usage-panel-alert.level-error {
     color: #ff6b6b;
 }
-.omp-usage-header-title,
-.omp-usage-section-title {
+.oh-my-usage-header-title,
+.oh-my-usage-section-title {
     font-weight: bold;
 }
-.omp-usage-notice {
+.oh-my-usage-notice {
     max-width: 360px;
 }
-.omp-usage-section-subtitle {
+.oh-my-usage-section-subtitle {
     font-size: 0.9em;
 }
-.omp-usage-badge {
+.oh-my-usage-badge {
     font-size: 0.85em;
     padding: 0 6px;
     border-radius: 99px;
     background-color: rgba(128, 128, 128, 0.2);
 }
-.omp-usage-section-body {
+.oh-my-usage-section-body {
     spacing: 4px;
 }
-.popup-menu-item.omp-usage-section-body-item {
+.popup-menu-item.oh-my-usage-section-body-item {
     padding-top: 0;
 }
-.omp-usage-row {
+.oh-my-usage-row {
     spacing: 10px;
     min-width: 370px;
 }
-.omp-usage-row-label {
+.oh-my-usage-row-label {
     width: 110px;
 }
-.omp-usage-row-bar {
+.oh-my-usage-row-bar {
     height: 6px;
 }
-.omp-usage-row-detail,
-.omp-usage-alert-detail {
+.oh-my-usage-row-detail,
+.oh-my-usage-alert-detail {
     width: 110px;
     text-align: right;
     font-feature-settings: "tnum";

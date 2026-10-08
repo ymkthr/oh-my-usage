@@ -11,13 +11,13 @@ zip=$("$root/tests/shell/pack.sh" "$out")
 scenarios=("$@")
 [[ ${#scenarios[@]} -eq 0 ]] && scenarios=(success fail-stale disable-midfetch prefs)
 
-problems='omp-usage test: FAIL|Script failed|JS ERROR|already disposed|(Gjs|GLib|GLib-GObject|GLib-GIO|St|Clutter)-CRITICAL'
+problems='oh-my-usage test: FAIL|Script failed|JS ERROR|already disposed|(Gjs|GLib|GLib-GObject|GLib-GIO|St|Clutter)-CRITICAL'
 noise='gnome-shell-perf-helper'
 
 # The Shell's own status items log CRITICALs while the session tears down
 # after the script returns, so only the lines up to the done marker count.
 until_done() {
-    sed '/omp-usage test: done/q' "$1"
+    sed '/oh-my-usage test: done/q' "$1"
 }
 
 status=0
@@ -47,12 +47,12 @@ for scenario in "${scenarios[@]}"; do
     if env "${env_args[@]}" OMP_USAGE_TEST_SHOT="$out/$scenario.png" \
         timeout 180 dbus-run-session -- gnome-shell-test-tool --headless --disable-animations \
             --extension "$zip" "$root/tests/shell/screenshot.js" >"$log" 2>&1 \
-        && grep -q 'omp-usage test: done' "$log" \
+        && grep -q 'oh-my-usage test: done' "$log" \
         && ! until_done "$log" | grep -E "$problems" | grep -qv "$noise"; then
-        grep -E 'omp-usage test:' "$log" | sed 's/^.*omp-usage test: /   /'
+        grep -E 'oh-my-usage test:' "$log" | sed 's/^.*oh-my-usage test: /   /'
         echo "   PASS"
     else
-        until_done "$log" | grep -E "omp-usage test:|$problems" | grep -v "$noise" | sed 's/^/   /' || true
+        until_done "$log" | grep -E "oh-my-usage test:|$problems" | grep -v "$noise" | sed 's/^/   /' || true
         echo "   FAIL  (see $log)"
         status=1
     fi
