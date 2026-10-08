@@ -17,6 +17,8 @@
  * @property {AccountKey} key
  * @property {string} provider
  * @property {number} ordinal
+ * @property {string|null} accountId
+ * @property {string|null} orgId
  * @property {string|null} org
  * @property {string|null} plan
  * @property {string|null} email
@@ -31,6 +33,21 @@
  */
 
 /**
+ * @typedef {object} AccountSelector
+ * @property {string} [email]
+ * @property {string} [accountId]
+ * @property {string} [projectId]
+ * @property {string} [orgId]
+ */
+
+/**
+ * @typedef {object} AccountPolicy
+ * @property {string} provider
+ * @property {AccountSelector} selector
+ * @property {number|null} priority
+ */
+
+/**
  * @typedef {{kind: 'missing-binary', path: string}
  *   | {kind: 'spawn', path: string, detail: string}
  *   | {kind: 'exit', status: number, stderrHead: string}
@@ -40,6 +57,7 @@
 /**
  * @typedef {object} StoreState
  * @property {Snapshot|null} snapshot
+ * @property {AccountPolicy[]} policies
  * @property {FetchError|null} error
  * @property {boolean} inFlight
  */
@@ -74,6 +92,14 @@
  */
 
 /**
+ * @typedef {object} ProviderView
+ * @property {string} provider
+ * @property {string} title
+ * @property {string} count
+ * @property {SectionView[]} accounts  priority descending, then the snapshot order
+ */
+
+/**
  * @typedef {object} AlertView
  * @property {AccountKey} key
  * @property {string} title
@@ -88,7 +114,7 @@
  * @property {string} status
  * @property {Level} statusLevel
  * @property {string|null} notice
- * @property {SectionView[]} sections
+ * @property {ProviderView[]} providers
  * @property {AlertView[]} alerts
  */
 
@@ -128,21 +154,14 @@ const PANEL_TAGS = new Map([['monthly', '1mo']]);
 
 const LEVEL_RANK = {normal: 0, warning: 1, error: 2};
 
+const SELECTOR_FIELDS = ['email', 'accountId', 'projectId', 'orgId'];
+
 /**
  * @param {string} stdout
  * @returns {Snapshot}
  */
 export function parseUsage(stdout) {
-    const text = stdout.trim();
-    if (!text)
-        throw new Error('empty stdout');
-
-    let wire;
-    try {
-        wire = JSON.parse(text);
-    } catch (e) {
-        throw new Error(`not JSON: ${e.message}`);
-    }
+    const wire = parseJson(stdout);
     if (!Array.isArray(wire?.reports))
         throw new Error('no reports array');
 
@@ -150,6 +169,42 @@ export function parseUsage(stdout) {
     const accounts = wire.reports.map(report => parseAccount(report ?? {}, ordinals));
     accounts.sort(compareAccounts);
     return {generatedAt: finiteOr(wire.generatedAt, Date.now()), accounts};
+}
+
+/**
+ * Parses `omp config get auth.accountPolicies --json`.
+ * @param {string} stdout
+ * @returns {AccountPolicy[]}
+ */
+export function parsePolicies(stdout) {
+    const wire = parseJson(stdout);
+    if (!Array.isArray(wire?.value))
+        throw new Error('no value array');
+
+    return wire.value.flatMap(entry => {
+        if (typeof entry?.provider !== 'string' || typeof entry.account !== 'object' || entry.account === null)
+            return [];
+        const selector = Object.fromEntries(SELECTOR_FIELDS.flatMap(field => {
+            const value = stringOrNull(entry.account[field]);
+            return value === null ? [] : [[field, value]];
+        }));
+        return [{provider: entry.provider, selector, priority: finiteOrNull(entry.priority)}];
+    });
+}
+
+/**
+ * @param {string} stdout
+ * @returns {any}
+ */
+function parseJson(stdout) {
+    const text = stdout.trim();
+    if (!text)
+        throw new Error('empty stdout');
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        throw new Error(`not JSON: ${e.message}`);
+    }
 }
 
 /**
@@ -164,11 +219,14 @@ function parseAccount(report, ordinals) {
 
     const meta = report.metadata ?? {};
     const email = stringOrNull(meta.email);
+    const accountId = stringOrNull(meta.accountId);
     const limits = Array.isArray(report.limits) ? report.limits : [];
     return {
-        key: `${provider}:${email ?? stringOrNull(meta.accountId) ?? ordinal}`,
+        key: `${provider}:${email ?? accountId ?? ordinal}`,
         provider,
         ordinal,
+        accountId,
+        orgId: stringOrNull(meta.orgId),
         org: stringOrNull(meta.orgName),
         plan: stringOrNull(meta.planType),
         email,
@@ -208,6 +266,42 @@ function compareAccounts(a, b) {
         a.ordinal - b.ordinal;
 }
 
+/** @typedef {{account: Account, policy: AccountPolicy|null}} Member */
+
+/**
+ * Accounts arrive sorted by provider name, so Map insertion order is the
+ * provider display order.
+ * @param {Account[]} accounts
+ * @param {AccountPolicy[]} policies
+ * @returns {{provider: string, members: Member[]}[]}
+ */
+function groupsOf(accounts, policies) {
+    /** @type {Map<string, Member[]>} */
+    const groups = new Map();
+    for (const account of accounts) {
+        const members = groups.get(account.provider) ?? [];
+        members.push({account, policy: policyOf(policies, account)});
+        groups.set(account.provider, members);
+    }
+    return [...groups].map(([provider, members]) => ({
+        provider,
+        members: members.sort((a, b) => (b.policy?.priority ?? 0) - (a.policy?.priority ?? 0)),
+    }));
+}
+
+/**
+ * omp's AccountPolicies.find(): the first policy whose set selector fields all
+ * equal the account's identity. The usage JSON has no projectId, so a
+ * projectId selector never matches.
+ * @param {AccountPolicy[]} policies
+ * @param {Account} account
+ * @returns {AccountPolicy|null}
+ */
+function policyOf(policies, account) {
+    return policies.find(policy => policy.provider === account.provider &&
+        Object.entries(policy.selector).every(([field, value]) => account[field] === value)) ?? null;
+}
+
 /**
  * @param {StoreState} state
  * @param {ViewPrefs} prefs
@@ -217,9 +311,10 @@ function compareAccounts(a, b) {
  */
 export function renderView(state, prefs, now, i18n = IDENTITY_I18N) {
     const _ = i18n.gettext;
-    const {snapshot, error, inFlight} = state;
+    const {snapshot, policies, error, inFlight} = state;
     const accounts = snapshot?.accounts ?? [];
-    const primary = primaryOf(accounts, prefs.primaryAccount);
+    const groups = groupsOf(accounts, policies);
+    const primary = primaryOf(groups.flatMap(g => g.members.map(m => m.account)), prefs.primaryAccount);
 
     let status;
     let statusLevel = 'normal';
@@ -243,16 +338,14 @@ export function renderView(state, prefs, now, i18n = IDENTITY_I18N) {
     else if (!snapshot && error)
         notice = describeError(error, i18n);
 
-    const sections = notice === null
-        ? accounts.map(account => sectionOf(account, account === primary, now, i18n))
-        : [];
+    const providers = notice === null ? groups.map(group => providerOf(group, primary, now, i18n)) : [];
     const flagged = notice === null ? flaggedOf(accounts, primary) : [];
     return {
         panel: panelOf(primary, state, panelAlertOf(flagged)),
         status,
         statusLevel,
         notice,
-        sections,
+        providers,
         alerts: flagged.map(({account, window}) => alertOf(account, window, now)),
     };
 }
@@ -318,7 +411,7 @@ export function formatAge(then, now, i18n) {
 }
 
 /**
- * @param {Account[]} accounts
+ * @param {Account[]} accounts  in display order
  * @param {AccountKey|''} primaryAccount
  * @returns {Account|null}
  */
@@ -344,8 +437,17 @@ export function panelWindowsOf(account) {
  */
 export function accountTitle(account) {
     const name = providerName(account.provider);
+    const suffix = suffixOf(account);
+    return suffix === null ? name : `${name} · ${suffix}`;
+}
+
+/**
+ * @param {Account} account
+ * @returns {string|null}
+ */
+function suffixOf(account) {
     const suffix = account.org ?? account.plan;
-    return suffix && suffix.toLowerCase() !== name.toLowerCase() ? `${name} · ${suffix}` : name;
+    return suffix && suffix.toLowerCase() !== providerName(account.provider).toLowerCase() ? suffix : null;
 }
 
 /**
@@ -360,18 +462,38 @@ export function fmt(template, ...args) {
 }
 
 /**
+ * @param {{provider: string, members: Member[]}} group
+ * @param {Account|null} primary
+ * @param {number} now
+ * @param {I18n} i18n
+ * @returns {ProviderView}
+ */
+function providerOf({provider, members}, primary, now, i18n) {
+    const n = members.length;
+    return {
+        provider,
+        title: providerName(provider),
+        count: fmt(i18n.ngettext('%s account', '%s accounts', n), n),
+        accounts: members.map(({account, policy}) => sectionOf(account, policy, account === primary, now, i18n)),
+    };
+}
+
+/**
  * @param {Account} account
+ * @param {AccountPolicy|null} policy
  * @param {boolean} primary
  * @param {number} now
  * @param {I18n} i18n
  * @returns {SectionView}
  */
-function sectionOf(account, primary, now, i18n) {
+function sectionOf(account, policy, primary, now, i18n) {
     const credits = account.resetCredits;
+    const priority = policy?.priority ?? null;
+    const parts = [suffixOf(account), priority === null ? null : fmt(i18n.gettext('priority %s'), priority)];
     return {
         key: account.key,
-        title: accountTitle(account),
-        subtitle: account.email ?? fmt(i18n.gettext('account %s'), account.ordinal),
+        title: account.email ?? fmt(i18n.gettext('account %s'), account.ordinal),
+        subtitle: parts.filter(part => part !== null).join(' · '),
         badge: credits > 0 ? fmt(i18n.ngettext('✦ %s reset', '✦ %s resets', credits), credits) : null,
         primary,
         rows: account.windows.map(w => rowOf(w, now)),

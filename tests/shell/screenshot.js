@@ -190,17 +190,30 @@ async function runScenario() {
                 t.get_transformed_position()[1] + t.height <= Math.min(menuBottom, global.stage.height)),
             'dropdown alert rows are on screen without scrolling');
         }
-        const expectMenu = env('OMP_USAGE_TEST_EXPECT_MENU');
-        if (expectMenu) {
-            const re = new RegExp(expectMenu);
-            const texts = [
-                ...textsIn(indicator.menu.box, 'oh-my-usage-section-title'),
-                ...textsIn(indicator.menu.box, 'oh-my-usage-row-label'),
-                ...textsIn(indicator.menu.box, 'oh-my-usage-row-detail'),
-                ...textsIn(indicator.menu.box, 'oh-my-usage-status'),
-            ];
-            check(texts.some(t => re.test(t)), `a dropdown label matches ${re} (saw ${JSON.stringify(texts)})`);
+        const expectOutline = env('OMP_USAGE_TEST_EXPECT_OUTLINE');
+        if (expectOutline) {
+            const outline = [];
+            const visit = a => {
+                if (a instanceof St.Label && a.has_style_class_name('oh-my-usage-provider-title'))
+                    outline.push(`# ${a.text}`);
+                else if (a instanceof St.Label && a.has_style_class_name('oh-my-usage-section-title'))
+                    outline.push(`- ${a.text}`);
+                for (const child of a.get_children())
+                    visit(child);
+            };
+            visit(indicator.menu.box);
+            check(JSON.stringify(outline) === expectOutline,
+                `dropdown outline is ${JSON.stringify(outline)}`);
         }
+        const centreY = a => a.get_transformed_position()[1] + a.get_transformed_size()[1] / 2;
+        const misaligned = labelsIn(indicator.menu.box, 'oh-my-usage-section-title').flatMap(title => {
+            const item = title.get_parent();
+            const siblings = item.get_children().filter(a => a !== title && a.visible);
+            return siblings.filter(a => Math.abs(centreY(a) - centreY(title)) > 1)
+                .map(a => `${title.text}: ${a.constructor.name} off by ${(centreY(a) - centreY(title)).toFixed(1)}px`);
+        });
+        check(misaligned.length === 0,
+            `ornament and badge share the email line's centre (${misaligned.join('; ') || 'all within 1px'})`);
         indicator.menu.close(PopupAnimation.NONE);
         return;
     }

@@ -10,7 +10,9 @@ oh-my-pi とは関係のない個人の拡張で、omp をコマンドとして�
 
 トップバーには主アカウントの 5 時間枠と 7 日枠を、2 本の小さなバーと `5h 5% · 7d 12%` の文字で出す。Claude の 7 日枠と 7 日枠 (Fable) のように同じ長さの枠が複数あるときは、使用率の高いほうを出す。主アカウントは既定で一覧の先頭のアカウントで、ドロップダウンでアカウント名をクリックすると切り替わる。
 
-ドロップダウンにはアカウントごとに、枠ごとの使用率バーと「使用率 · リセットまでの残り」を並べる。`✦ 1 reset` はそのアカウントに残っている上限リセット権の数。バーは使用率 80% 以上でオレンジ、90% 以上で赤になる。omp の JSON にも `status` はあるが、警告に変わる使用率がプロバイダーごとに違う(0.8 と 0.9)ので、色は `usedFraction` から拡張側で決めている。
+ドロップダウンは `omp usage` の表示と同じく、プロバイダーごとの見出し(`OpenAI Codex  2 accounts`)の下に、そのプロバイダーのアカウントを並べる。各アカウントには枠ごとの使用率バーと「使用率 · リセットまでの残り」が付く。`✦ 1 reset` はそのアカウントに残っている上限リセット権の数。バーは使用率 80% 以上でオレンジ、90% 以上で赤になる。omp の JSON にも `status` はあるが、警告に変わる使用率がプロバイダーごとに違う(0.8 と 0.9)ので、色は `usedFraction` から拡張側で決めている。
+
+同じプロバイダーに複数のアカウントがあるときは、omp が使う順に並べる。順番は omp の設定 `auth.accountPolicies` の `priority` で決まり、数字の大きいアカウントが上に来る。優先度を設定したアカウントには、アカウント名の下に `priority 10` のように数字も出す。設定がなければ優先度は 0 として扱い、メールアドレス順に並べる。拡張は取得のたびに `omp config get auth.accountPolicies --json` で設定を読む。この読み出しに失敗しても使用量の表示は止めず、前回読めた順番を使う。
 
 取得に失敗しても前回の値は消さない。ドロップダウンの見出しが赤い `update failed · last 12 min ago` に変わり、トップバーの文字が薄くなる。一度も取得できていないときはトップバーに `!` を出し、ドロップダウンに理由を出す。理由は「omp が見つからない」か、終了コードと stderr の先頭行のどちらか。
 
@@ -75,7 +77,7 @@ tests/shell/run.sh real    # 本物の omp で同じ確認をする
 
 ログとスクリーンショットは `tests/out/` に出る。
 
-omp の代わりには `tests/fixtures/fake-omp` を使う。`tests/fixtures/usage.json` の時刻を現在時刻にずらして返す。`FAKE_OMP_MODE=fail` で終了コード 1 と空の標準出力を返し、`hang` で応答しなくなる。
+omp の代わりには `tests/fixtures/fake-omp` を使う。`tests/fixtures/usage.json` の時刻を現在時刻にずらして返し、`omp config get auth.accountPolicies --json` には `tests/fixtures/config.json` を返す。`FAKE_OMP_MODE=fail` で終了コード 1 と空の標準出力を返し、`hang` で応答しなくなる。`FAKE_OMP_POLICY_MODE=fail` では設定の読み出しだけが失敗する。
 
 シナリオが `oh-my-usage test:` の行を 1 つも出さずに失敗し、ログに `Failed to activate service 'org.freedesktop.secrets': timed out` があれば、テスト用 D-Bus セッションの起動待ちで時間切れになっている。拡張の不具合ではないので、そのシナリオだけ再実行する。
 

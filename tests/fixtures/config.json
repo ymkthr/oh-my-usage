@@ -1,0 +1,21 @@
+{
+  "key": "auth.accountPolicies",
+  "value": [
+    {
+      "provider": "openai-codex",
+      "account": {
+        "email": "work@example.com"
+      },
+      "priority": 10
+    },
+    {
+      "provider": "openai-codex",
+      "account": {
+        "email": "personal@example.com"
+      },
+      "priority": 1
+    }
+  ],
+  "type": "array",
+  "description": ""
+}

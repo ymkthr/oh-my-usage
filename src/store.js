@@ -2,7 +2,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 
-import {parseUsage} from './model.js';
+import {parsePolicies, parseUsage} from './model.js';
 
 Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async');
 
@@ -16,6 +16,7 @@ Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async');
 
 /** @typedef {import('./model.js').StoreState} StoreState */
 /** @typedef {import('./model.js').Snapshot} Snapshot */
+/** @typedef {import('./model.js').AccountPolicy} AccountPolicy */
 /** @typedef {import('./model.js').FetchError} FetchError */
 
 const WATCHDOG_SECONDS = 60;
@@ -46,6 +47,8 @@ export class UsageStore extends GObject.Object {
 
     /** @type {Snapshot|null} */
     #snapshot = null;
+    /** @type {AccountPolicy[]} */
+    #policies = [];
     /** @type {FetchError|null} */
     #error = null;
 
@@ -74,7 +77,7 @@ export class UsageStore extends GObject.Object {
 
     /** @returns {StoreState} */
     get state() {
-        return {snapshot: this.#snapshot, error: this.#error, inFlight: this.#inFlight};
+        return {snapshot: this.#snapshot, policies: this.#policies, error: this.#error, inFlight: this.#inFlight};
     }
 
     get #destroyed() {
@@ -160,10 +163,24 @@ export class UsageStore extends GObject.Object {
             }
             this.#snapshot = parseUsage(run.stdout);
             this.#error = null;
+            await this.#readPolicies();
         } catch (e) {
             if (e instanceof Gio.IOErrorEnum && e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
                 return;
             this.#error = classify(e, path);
+        }
+    }
+
+    /**
+     * Priorities only order the accounts, so an omp that cannot answer the
+     * config read keeps the last policies instead of failing the refresh.
+     */
+    async #readPolicies() {
+        try {
+            const run = await this.#spawn(['config', 'get', 'auth.accountPolicies', '--json']);
+            if (run.ok)
+                this.#policies = parsePolicies(run.stdout);
+        } catch {
         }
     }
 

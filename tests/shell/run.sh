@@ -27,7 +27,7 @@ for scenario in "${scenarios[@]}"; do
             env_args=(OMP_USAGE_TEST_MODE=success
                 OMP_USAGE_TEST_OMP="$fixtures/fake-omp"
                 OMP_USAGE_TEST_EXPECT_PANEL='^5h 5% · 7d 12%$'
-                OMP_USAGE_TEST_EXPECT_MENU='^OpenAI Codex · plus$'
+                OMP_USAGE_TEST_EXPECT_OUTLINE='["# Anthropic","- work@example.com","# OpenAI Codex","- work@example.com","- personal@example.com","# OpenCode Go","- account 1"]'
                 OMP_USAGE_TEST_EXPECT_ALERT='⚠ Go 1mo 93% +1'
                 OMP_USAGE_TEST_EXPECT_ALERT_ROWS='["OpenCode Go · Monthly","OpenAI Codex · plus · 7 days"]') ;;
         fail-stale | disable-midfetch | prefs)

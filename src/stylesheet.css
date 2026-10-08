@@ -40,7 +40,8 @@
     spacing: 12px;
 }
 .oh-my-usage-status,
-.oh-my-usage-section-subtitle {
+.oh-my-usage-section-subtitle,
+.oh-my-usage-provider-count {
     color: rgba(128, 128, 128, 1);
 }
 .oh-my-usage-row-detail.level-warning,
@@ -57,8 +58,15 @@
     color: #ff6b6b;
 }
 .oh-my-usage-header-title,
-.oh-my-usage-section-title {
+.oh-my-usage-provider-title {
     font-weight: bold;
+}
+.oh-my-usage-provider-title {
+    font-size: 1.05em;
+    color: -st-accent-color;
+}
+.popup-menu-item.oh-my-usage-account-gap {
+    margin-top: 6px;
 }
 .oh-my-usage-notice {
     max-width: 360px;
@@ -74,6 +82,10 @@
 }
 .oh-my-usage-section-body {
     spacing: 4px;
+}
+.popup-menu-item.oh-my-usage-account-title {
+    padding-top: 4px;
+    padding-bottom: 4px;
 }
 .popup-menu-item.oh-my-usage-section-body-item {
     padding-top: 0;

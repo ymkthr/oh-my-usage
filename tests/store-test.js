@@ -9,6 +9,7 @@ import {UsageStore, defaultOmpPath} from '../src/store.js';
 const here = GLib.path_get_dirname(Gio.File.new_for_uri(import.meta.url).get_path());
 const FAKE_OMP = `${here}/fixtures/fake-omp`;
 const SELF_PID = Gio.Credentials.new().get_unix_pid();
+const POLICIES = 'config get auth.accountPolicies --json';
 
 // GLib.get_home_dir() caches HOME on its first call, so HOME is replaced
 // before anything reads it.
@@ -143,13 +144,17 @@ const cases = {
         const store = new UsageStore({ompPath: FAKE_OMP, intervalSeconds: 0});
         const states = [];
         store.connect('changed', () => states.push(store.state.inFlight));
-        eq('read: state before the first refresh', store.state, {snapshot: null, error: null, inFlight: false});
+        eq('read: state before the first refresh', store.state, {snapshot: null, policies: [], error: null, inFlight: false});
         store.refresh('read');
         await settled(store);
         eq('read: changed fired for in-flight then idle', states, [true, false]);
         eq('read: snapshot has the four accounts', store.state.snapshot?.accounts.length, 4);
         eq('read: no error', store.state.error, null);
-        eq('read: ran exactly one read', fake.lines(), ['usage --json']);
+        eq('read: usage then policies', fake.lines(), ['usage --json', POLICIES]);
+        eq('read: policies come from omp config', store.state.policies, [
+            {provider: 'openai-codex', selector: {email: 'work@example.com'}, priority: 10},
+            {provider: 'openai-codex', selector: {email: 'personal@example.com'}, priority: 1},
+        ]);
         store.destroy();
     },
 
@@ -159,7 +164,7 @@ const cases = {
         const store = new UsageStore({ompPath: '', intervalSeconds: 0});
         store.refresh('read');
         await settled(store);
-        eq('default path: the default binary ran', fake.lines(), ['usage --json']);
+        eq('default path: the default binary ran', fake.lines(), ['usage --json', POLICIES]);
         eq('default path: snapshot published', [store.state.error, store.state.snapshot?.accounts.length], [null, 4]);
         store.destroy();
     },
@@ -176,12 +181,12 @@ const cases = {
         eq('single flight: in flight right after refresh()', store.state.inFlight, true);
         await settled(store);
         eq('single flight: one invalidate and one read follow the first read', fake.lines(),
-            ['usage --json', 'usage invalidate', 'usage --json']);
+            ['usage --json', POLICIES, 'usage invalidate', 'usage --json', POLICIES]);
         eq('single flight: one drain, two changed signals', changes, 2);
         eq('single flight: snapshot published', store.state.snapshot?.accounts.length, 4);
         store.refresh('read');
         await settled(store);
-        eq('single flight: a later refresh runs again', fake.lines().length, 4);
+        eq('single flight: a later refresh runs again', fake.lines().length, 7);
         store.destroy();
     },
 
@@ -204,7 +209,36 @@ const cases = {
         await settled(store);
         eq('failure: success clears the error', store.state.error, null);
         eq('failure: success replaces the snapshot', store.state.snapshot !== good, true);
-        eq('failure: three reads ran', fake.lines(), ['usage --json', 'usage --json', 'usage --json']);
+        eq('failure: policies are read only after a successful usage read', fake.lines(),
+            ['usage --json', POLICIES, 'usage --json', 'usage --json', POLICIES]);
+        store.destroy();
+    },
+
+    async 'a failed policy read keeps the last policies and is not an error'() {
+        const fake = fakeOmp();
+        GLib.setenv('FAKE_OMP_POLICY_MODE', 'fail', true);
+        const store = new UsageStore({ompPath: FAKE_OMP, intervalSeconds: 0});
+        store.refresh('read');
+        await settled(store);
+        eq('policy failure: first read publishes the snapshot without policies',
+            [store.state.error, store.state.snapshot?.accounts.length, store.state.policies], [null, 4, []]);
+
+        GLib.unsetenv('FAKE_OMP_POLICY_MODE');
+        store.refresh('read');
+        await settled(store);
+        const policies = store.state.policies;
+        const good = store.state.snapshot;
+        eq('policy failure: recovered policies', policies.length, 2);
+
+        GLib.setenv('FAKE_OMP_POLICY_MODE', 'fail', true);
+        store.refresh('read');
+        await settled(store);
+        GLib.unsetenv('FAKE_OMP_POLICY_MODE');
+        eq('policy failure: no error', store.state.error, null);
+        eq('policy failure: the new snapshot is published', store.state.snapshot !== good && store.state.snapshot !== null, true);
+        eq('policy failure: previous policies kept', store.state.policies === policies, true);
+        eq('policy failure: each attempt asked for policies', fake.lines(),
+            ['usage --json', POLICIES, 'usage --json', POLICIES, 'usage --json', POLICIES]);
         store.destroy();
     },
 
@@ -222,7 +256,7 @@ const cases = {
         store.configure({ompPath: FAKE_OMP, intervalSeconds: 0});
         store.refresh('read');
         await settled(store);
-        eq('missing: a corrected path recovers', [store.state.error, fake.lines()], [null, ['usage --json']]);
+        eq('missing: a corrected path recovers', [store.state.error, fake.lines()], [null, ['usage --json', POLICIES]]);
         store.destroy();
     },
 
@@ -242,7 +276,8 @@ const cases = {
         eq('destroy: child is gone', gone, true);
         await sleep(300);
         eq('destroy: no changed after destroy', changes, 1);
-        eq('destroy: state settles without publishing', store.state, {snapshot: null, error: null, inFlight: false});
+        eq('destroy: state settles without publishing', store.state,
+            {snapshot: null, policies: [], error: null, inFlight: false});
         eq('destroy: refresh after destroy spawned nothing', fake.lines(), ['usage --json']);
         store.destroy();
         eq('destroy: idempotent', fakeOmpChildren(), []);
@@ -250,20 +285,21 @@ const cases = {
 
     async 'timer only ever reads; configure() re-arms it and destroy() stops it'() {
         const fake = fakeOmp();
+        const reads = () => fake.lines().filter(line => line === 'usage --json').length;
         const store = new UsageStore({ompPath: FAKE_OMP, intervalSeconds: 1});
-        eq('timer: first tick arrives', await until(() => fake.lines().length >= 1, 3000), true);
-        eq('timer: tick is a plain read', fake.lines(), ['usage --json']);
+        eq('timer: first tick arrives', await until(() => fake.lines().length >= 2, 3000), true);
+        eq('timer: tick is a plain read', fake.lines(), ['usage --json', POLICIES]);
 
         store.configure({ompPath: FAKE_OMP, intervalSeconds: 0});
         await sleep(2000);
-        eq('timer: interval 0 stops the ticks', fake.lines().length, 1);
+        eq('timer: interval 0 stops the ticks', reads(), 1);
 
         store.configure({ompPath: FAKE_OMP, intervalSeconds: 1});
         store.configure({ompPath: FAKE_OMP, intervalSeconds: 1});
         await sleep(3100);
-        const ticks = fake.lines().length - 1;
+        const ticks = reads() - 1;
         eq('timer: one re-armed timer ticks once a second', ticks >= 2 && ticks <= 3, true);
-        eq('timer: never invalidates', fake.lines().every(line => line === 'usage --json'), true);
+        eq('timer: never invalidates', fake.lines().includes('usage invalidate'), false);
 
         store.destroy();
         const after = fake.lines().length;

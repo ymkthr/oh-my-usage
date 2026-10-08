@@ -10,6 +10,7 @@ import {renderView} from './model.js';
 
 /** @typedef {import('./model.js').PanelView} PanelView */
 /** @typedef {import('./model.js').AlertView} AlertView */
+/** @typedef {import('./model.js').ProviderView} ProviderView */
 /** @typedef {import('./model.js').SectionView} SectionView */
 /** @typedef {import('./model.js').RowView} RowView */
 /** @typedef {import('./model.js').BarView} BarView */
@@ -197,10 +198,11 @@ export class Indicator extends PanelMenu.Button {
         this.#titleItems.clear();
         if (view.notice !== null)
             this.#sections.addMenuItem(noticeItem(view.notice));
-        view.sections.forEach((section, i) => {
+        view.providers.forEach((provider, i) => {
             if (i > 0)
                 this.#sections.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
-            this.#addSection(section);
+            this.#sections.addMenuItem(providerItem(provider));
+            provider.accounts.forEach((section, j) => this.#addSection(section, j > 0));
         });
     }
 
@@ -213,7 +215,7 @@ export class Indicator extends PanelMenu.Button {
         const view = this.#view();
         this.#applyPanel(view.panel);
         this.#applyAlerts(view.alerts);
-        for (const section of view.sections)
+        for (const section of view.providers.flatMap(provider => provider.accounts))
             this.#titleItems.get(section.key)?.setOrnament(ornamentOf(section));
     }
 
@@ -243,9 +245,14 @@ export class Indicator extends PanelMenu.Button {
         this.#alertsSeparator.visible = alerts.length > 0;
     }
 
-    /** @param {SectionView} section */
-    #addSection(section) {
-        const title = new PopupMenu.PopupBaseMenuItem();
+    /**
+     * @param {SectionView} section
+     * @param {boolean} gap  set for every account after a provider's first
+     */
+    #addSection(section, gap) {
+        const title = new PopupMenu.PopupBaseMenuItem({
+            style_class: `oh-my-usage-account-title${gap ? ' oh-my-usage-account-gap' : ''}`,
+        });
         title.setOrnament(ornamentOf(section));
         title.add_child(new St.Label({
             text: section.title,
@@ -275,12 +282,33 @@ export class Indicator extends PanelMenu.Button {
             style_class: 'oh-my-usage-section-body',
             x_expand: true,
         });
-        column.add_child(new St.Label({text: section.subtitle, style_class: 'oh-my-usage-section-subtitle'}));
+        if (section.subtitle !== '')
+            column.add_child(new St.Label({text: section.subtitle, style_class: 'oh-my-usage-section-subtitle'}));
         for (const row of section.rows)
             column.add_child(rowLine(row));
         body.add_child(column);
         this.#sections.addMenuItem(body);
     }
+}
+
+/**
+ * @param {ProviderView} provider
+ * @returns {PopupMenu.PopupBaseMenuItem}
+ */
+function providerItem(provider) {
+    const item = new PopupMenu.PopupBaseMenuItem({reactive: false, can_focus: false});
+    item.add_child(new St.Label({
+        text: provider.title,
+        style_class: 'oh-my-usage-provider-title',
+        x_expand: true,
+        y_align: Clutter.ActorAlign.CENTER,
+    }));
+    item.add_child(new St.Label({
+        text: provider.count,
+        style_class: 'oh-my-usage-provider-count',
+        y_align: Clutter.ActorAlign.CENTER,
+    }));
+    return item;
 }
 
 /**

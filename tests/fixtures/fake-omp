@@ -20,13 +20,22 @@ if mode == "fail":
     )
     sys.exit(1)
 
+here = os.path.dirname(os.path.realpath(__file__))
+
+if argv == ["config", "get", "auth.accountPolicies", "--json"]:
+    if os.environ.get("FAKE_OMP_POLICY_MODE") == "fail":
+        sys.stderr.write("Unknown setting: auth.accountPolicies\n")
+        sys.exit(1)
+    with open(os.path.join(here, "config.json"), encoding="utf-8") as f:
+        sys.stdout.write(f.read())
+    sys.exit(0)
 if argv == ["usage", "invalidate"]:
     sys.exit(0)
 if argv != ["usage", "--json"]:
     sys.stderr.write(f"fake-omp: unsupported argv {argv!r}\n")
     sys.exit(2)
 
-fixture = os.path.join(os.path.dirname(os.path.realpath(__file__)), "usage.json")
+fixture = os.path.join(here, "usage.json")
 with open(fixture, encoding="utf-8") as f:
     data = json.load(f)
 
