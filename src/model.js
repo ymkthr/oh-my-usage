@@ -135,6 +135,8 @@ export const IDENTITY_I18N = {
     ngettext: (s, p, n) => (n === 1 ? s : p),
 };
 
+// omp's own `status` turns to warning at 0.8 for some providers and 0.9 for
+// others, so colors come from usedFraction to keep one scale across providers.
 const WARNING_FRACTION = 0.8;
 const ERROR_FRACTION = 0.9;
 
