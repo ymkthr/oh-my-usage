@@ -233,7 +233,7 @@ function parseAccount(report, ordinals) {
         plan: stringOrNull(meta.planType),
         email,
         resetCredits: finiteOr(report.resetCredits?.availableCount, 0),
-        windows: limits.flatMap(limit => parseWindow(limit) ?? []),
+        windows: uniqueShared(limits).flatMap(limit => parseWindow(limit) ?? []),
     };
 }
 
@@ -251,10 +251,46 @@ function parseWindow(limit) {
         id: String(limit.id ?? kind),
         kind,
         tier: stringOrNull(limit.scope.tier),
-        label: String(window.label ?? limit.label ?? kind),
+        label: labelOf(limit, window, kind),
         usedFraction: clamp01(limit.amount?.usedFraction),
         resetsAt: finiteOrNull(window.resetsAt),
     };
+}
+
+/**
+ * Google Antigravity reports one quota shared by several models once per model.
+ * @param {object[]} limits
+ * @returns {object[]}
+ */
+function uniqueShared(limits) {
+    const seen = new Set();
+    return limits.filter(limit => {
+        const group = limit?.scope?.sharedGroup;
+        if (group === undefined)
+            return true;
+        if (seen.has(group))
+            return false;
+        seen.add(group);
+        return true;
+    });
+}
+
+/**
+ * The short window label wins when the limit label only prefixes it with the
+ * provider ("Claude 5 Hour"), because the provider heading already says that.
+ * @param {object} limit
+ * @param {object} window
+ * @param {string} kind
+ * @returns {string}
+ */
+function labelOf(limit, window, kind) {
+    const windowLabel = stringOrNull(window.label);
+    const limitLabel = stringOrNull(limit.label);
+    if (limitLabel === null)
+        return windowLabel ?? kind;
+    if (windowLabel === null || !limitLabel.toLowerCase().includes(windowLabel.toLowerCase()))
+        return limitLabel;
+    return windowLabel;
 }
 
 /**

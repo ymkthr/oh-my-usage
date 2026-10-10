@@ -92,6 +92,15 @@ eq('parse: same provider twice without email gets ordinal keys',
     parseUsage('{"generatedAt":1,"reports":[{"provider":"x"},{"provider":"x"}]}').accounts.map(a => a.key),
     ['x:1', 'x:2']);
 
+const antigravity = parseUsage(`{"generatedAt":1,"reports":[{"provider":"google-antigravity","limits":[
+    {"id":"gemini-weekly","label":"Gemini","scope":{"windowId":"weekly"},"window":{"label":"Weekly"}},
+    {"id":"anthropic-3p","label":"Claude & GPT (shared)","scope":{"windowId":"weekly","shared":true,"sharedGroup":"3p-weekly:weekly"},"window":{"label":"Weekly"}},
+    {"id":"openai-3p","label":"Claude & GPT (shared)","scope":{"windowId":"weekly","shared":true,"sharedGroup":"3p-weekly:weekly"},"window":{"label":"Weekly"}}]}]}`)
+    .accounts[0].windows;
+eq('parse: a limit label that does not repeat the window label names the row',
+    antigravity.map(w => w.label), ['Gemini', 'Claude & GPT (shared)']);
+eq('parse: a shared quota reported per model appears once', antigravity.map(w => w.id), ['gemini-weekly', 'anthropic-3p']);
+
 /** @param {object[]} value @returns {import('../src/model.js').AccountPolicy[]} */
 function policiesOf(value) {
     return parsePolicies(JSON.stringify({key: 'auth.accountPolicies', value, type: 'array', description: ''}));
