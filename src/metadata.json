@@ -2,7 +2,7 @@
   "uuid": "oh-my-usage@ymkthr.github.io",
   "name": "oh-my-usage",
   "description": "Shows LLM provider usage limits from `omp usage` in the top panel",
-  "shell-version": ["50"],
+  "shell-version": ["50", "51"],
   "settings-schema": "org.gnome.shell.extensions.oh-my-usage",
   "gettext-domain": "oh-my-usage",
   "url": "https://github.com/ymkthr/oh-my-usage",
