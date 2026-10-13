@@ -1,0 +1,35 @@
+name: macOS app
+
+on:
+  pull_request:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag matches version-name
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version=$(plutil -extract version-name raw -o - src/metadata.json)
+          test "v$version" = "$GITHUB_REF_NAME" || {
+            echo "tag $GITHUB_REF_NAME does not match version-name $version in src/metadata.json" >&2
+            exit 1
+          }
+
+      - run: make mac-test
+      - run: make mac-zip
+
+      # ymkthr/homebrew-tap's daily job reads the latest release and rewrites
+      # the cask's version and sha256 from v<version>/oh-my-usage.zip.
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/oh-my-usage.zip --generate-notes
