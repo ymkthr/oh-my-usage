@@ -1,6 +1,8 @@
 # 開発
 
-コードを変えたら `make install` のあとに再ログインする。Wayland の GNOME Shell は動作中に拡張を読み直さない。
+GNOME 版は `src/`、macOS 版は `mac/` にある。表示する文字列、並び順、色分けの判定は `src/model.js` だけが持ち、macOS 版はこのファイルを JavaScriptCore で読み込んで同じ `renderView()` を呼ぶ。表示を変えるときは `src/model.js` を直せば両方に効く。macOS 版の Swift が受け持つのは omp の実行、設定の保存、メニューバーへの描画だけだ。
+
+GNOME 版のコードを変えたら `make install` のあとに再ログインする。Wayland の GNOME Shell は動作中に拡張を読み直さない。
 
 ## テストは headless の GNOME Shell で画面まで確かめる
 
@@ -29,6 +31,25 @@ tests/shell/run.sh real    # 本物の omp で同じ確認をする
 | `FAKE_OMP_MODE=hang` | 応答しなくなる。 |
 | `FAKE_OMP_POLICY_MODE=fail` | 設定の読み出しだけが失敗する。 |
 | `FAKE_OMP_LOG=<path>` | 受け取った引数を 1 回 1 行で `<path>` に追記する。 |
+
+## macOS 版はメニューバーで確かめる
+
+```sh
+make mac-test   # XCTest。src/model.js の読み込みと、fake-omp を使った omp の呼び出し
+make mac-app    # dist/oh-my-usage.app を作る
+open -n dist/oh-my-usage.app --args -ompPath "$PWD/tests/fixtures/fake-omp"
+```
+
+設定は UserDefaults に `ompPath`、`refreshInterval`、`panelDisplay`、`primaryAccount` の名前で入る。起動引数に `-ompPath <path>` のように渡すと、保存した値より優先される。fake-omp に向けるときはこれを使う。
+
+Bartender や Barbee のようなメニューバー整理アプリを使っていると、新しい項目が隠れて見えないことがある。その場合は起動引数に `"-NSStatusItem Preferred Position Item-0" 400` を足すと、画面の右端から 400 pt の位置に出る。AppKit はこの位置を `io.github.ymkthr.oh-my-usage` に保存するので、確かめ終えたら `defaults delete io.github.ymkthr.oh-my-usage` で消す。
+
+## macOS 版のリリースは tag を push する
+
+1. `src/metadata.json` の `version-name` を上げてコミットする。
+2. `git tag v<version-name>` を作って push する。
+
+`.github/workflows/release-mac.yml` が tag と `version-name` の一致を確かめ、`make mac-test` と `make mac-zip` を実行して、GitHub Release に `oh-my-usage.zip` を載せる。zip の中身は arm64 と x86_64 を含むユニバーサルバイナリで、アドホック署名だけを付けている。[ymkthr/homebrew-tap](https://github.com/ymkthr/homebrew-tap) の日次ジョブが最新のリリースを読み、cask の `version` と `sha256` を書き換える。すぐ反映したいときは、tap の Actions から「Update Casks & Formulas」を手動で実行する。
 
 ## D-Bus の起動待ちで落ちたら再実行する
 
