@@ -2,7 +2,7 @@ UUID := oh-my-usage@ymkthr.github.io
 DIST := dist
 ZIP  := $(DIST)/$(UUID).shell-extension.zip
 
-.PHONY: test test-unit test-shell screenshot pack install uninstall clean mac-test mac-app mac-install
+.PHONY: test test-unit test-shell screenshot pack install uninstall clean mac-test mac-app mac-zip mac-install
 
 test: test-unit test-shell
 
@@ -34,6 +34,10 @@ mac-test:
 
 mac-app:
 	mac/bundle.sh
+
+mac-zip: mac-app
+	rm -f $(DIST)/oh-my-usage.zip
+	ditto -c -k --keepParent $(DIST)/oh-my-usage.app $(DIST)/oh-my-usage.zip
 
 mac-install: mac-app
 	pkill -x OhMyUsage || true

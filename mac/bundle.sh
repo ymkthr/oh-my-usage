@@ -5,8 +5,10 @@ mac=$(cd "$(dirname "$0")" && pwd)
 root=$(dirname "$mac")
 app="$root/dist/oh-my-usage.app"
 
-swift build -c release --package-path "$mac"
-bin=$(swift build -c release --package-path "$mac" --show-bin-path)
+# Universal so the Homebrew cask's single zip also runs on Intel Macs.
+build() { swift build -c release --package-path "$mac" --arch arm64 --arch x86_64 "$@"; }
+build
+bin=$(build --show-bin-path)
 version=$(plutil -extract version-name raw -o - "$root/src/metadata.json")
 
 rm -rf "$app"
