@@ -1,6 +1,6 @@
 # 開発
 
-GNOME 版は `src/`、macOS 版は `mac/` にある。表示する文字列、並び順、色分けの判定は `src/model.js` だけが持ち、macOS 版はこのファイルを JavaScriptCore で読み込んで同じ `renderView()` を呼ぶ。表示を変えるときは `src/model.js` を直せば両方に効く。macOS 版の Swift が受け持つのは omp の実行、設定の保存、メニューバーへの描画だけだ。
+GNOME 版は `src/`、macOS 版は `mac/` にある。表示する文字列、並び順、色分けの判定は `src/model.js` だけが持ち、macOS 版はこのファイルを JavaScriptCore で読み込んで同じ `renderView()` を呼ぶ。表示を変えるときは `src/model.js` を直せば両方に効く。OpenRouter の応答の解釈と、ログインシェルに渡すキー読み出しのスクリプト (`OPENROUTER_KEY_SCRIPT`) もここにある。macOS 版の Swift が受け持つのは omp の実行、設定の保存、メニューバーへの描画だけだ。OpenRouter の取得は GNOME 版の `src/store.js` にしかなく、macOS 版は `renderView()` に OpenRouter の状態を渡さないので欄が出ない。
 
 GNOME 版のコードを変えたら `make install` のあとに再ログインする。Wayland の GNOME Shell は動作中に拡張を読み直さない。
 
@@ -31,6 +31,12 @@ tests/shell/run.sh real    # 本物の omp で同じ確認をする
 | `FAKE_OMP_MODE=hang` | 応答しなくなる。 |
 | `FAKE_OMP_POLICY_MODE=fail` | 設定の読み出しだけが失敗する。 |
 | `FAKE_OMP_LOG=<path>` | 受け取った引数を 1 回 1 行で `<path>` に追記する。 |
+
+## OpenRouter はテストで本物を呼ばない
+
+`tests/store-test.js` は、開発者自身の鍵で OpenRouter を呼ばないように、最初に `OPENROUTER_API_KEY` と `OPENROUTER_MANAGEMENT_KEY` を消す。ログインシェルの代わりには、渡されたスクリプトを `FAKE_OPENROUTER_KEY` と `FAKE_OPENROUTER_MANAGEMENT_KEY` を鍵として実行するだけの偽シェルを `SHELL` に入れる。OpenRouter の代わりはローカルの `Soup.Server` で、`/key` と `/activity` に別々の応答を返す。
+
+`tests/shell/run.sh` も、fake-omp を使うシナリオでは `OPENROUTER_API_KEY` と `OPENROUTER_MANAGEMENT_KEY` を消して `SHELL=/bin/false` で動かす。README の画像に自分の消費額が写らないようにするためだ。`real` シナリオだけは手元の環境をそのまま渡すので、本物の OpenRouter の欄が出る。ただし `gnome-shell-test-tool` は `XDG_CONFIG_HOME` を一時ディレクトリに向けるので、拡張がログインシェルに聞く経路では `~/.config` 配下から読む鍵が見つからない。`real` で OpenRouter を出すには、呼び出し側のシェルで両方の鍵を export しておく。
 
 ## macOS 版はメニューバーで確かめる
 
