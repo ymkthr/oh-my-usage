@@ -1,6 +1,6 @@
 # oh-my-usage
 
-[omp](https://github.com/can1357/oh-my-pi) に登録した LLM アカウントの利用上限を、GNOME のトップバーか macOS のメニューバーに出す。`omp usage --json` を定期的に実行し、全アカウントの使用率とリセットまでの残り時間を一覧する。GNOME では GNOME Shell 拡張として、macOS ではメニューバーに常駐するアプリとして動く。
+[omp](https://github.com/can1357/oh-my-pi) に登録した LLM アカウントの利用上限を、GNOME のトップバーか macOS のメニューバーに出す。`omp usage --json` を定期的に実行し、全アカウントの使用率とリセットまでの残り時間を一覧する。OpenRouter の API キーがあれば、その消費額も並べて出す。GNOME では GNOME Shell 拡張として、macOS ではメニューバーに常駐するアプリとして動く。
 
 ![トップバーとドロップダウン](docs/menu.png)
 
@@ -50,6 +50,14 @@ omp は `~/.bun/bin/omp` にあるものとして実行する。Finder から起
 更新は `brew upgrade --cask oh-my-usage`、削除は `brew uninstall --cask oh-my-usage` で行う。どちらも動いているアプリを終了させる。設定も消すなら `--zap` を付ける。
 
 ソースからビルドするなら、Xcode を入れたうえでリポジトリを clone し、`make mac-install` を実行する。`~/Applications/` に入って起動する。
+
+## OpenRouter
+
+環境変数 `OPENROUTER_API_KEY` に API キーを入れていると、メニューに OpenRouter の欄が増える。
+今週と今日の行は、今月の消費のうちどれだけがその期間に集中しているかを表す。
+キーにクレジット上限を設定しているか、ガードレールやワークスペースの予算がかかっていれば、それも使用率のバーとして出す。使用率が 80% 以上になると、他のアカウントと同じく警告になる。
+
+`OPENROUTER_MANAGEMENT_KEY` に [Management API key](https://openrouter.ai/settings/management-keys) も入れておくと、直近 30 日の日ごとの消費額が縦棒グラフも表示する。
 
 ## ライセンス
 
