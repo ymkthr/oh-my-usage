@@ -21,11 +21,12 @@ until_done() {
 }
 
 status=0
+no_openrouter=(-u OPENROUTER_API_KEY -u OPENROUTER_MANAGEMENT_KEY SHELL=/bin/false)
 for scenario in "${scenarios[@]}"; do
     tool_args=()
     case $scenario in
         success)
-            env_args=(OMP_USAGE_TEST_MODE=success
+            env_args=("${no_openrouter[@]}" OMP_USAGE_TEST_MODE=success
                 OMP_USAGE_TEST_OMP="$fixtures/fake-omp"
                 OMP_USAGE_TEST_EXPECT_PANEL='^5h 5% · 7d 12%$'
                 OMP_USAGE_TEST_EXPECT_OUTLINE='["# Anthropic","- work@example.com","# OpenAI Codex","- work@example.com","- personal@example.com","# OpenCode Go","- account 1"]'
@@ -33,12 +34,12 @@ for scenario in "${scenarios[@]}"; do
                 OMP_USAGE_TEST_EXPECT_ALERT_ROWS='["OpenCode Go · Monthly","OpenAI Codex · plus · 7 days"]') ;;
         readme)
             tool_args=(--wrap "$root/tests/shell/tall-monitor.sh")
-            env_args=(OMP_USAGE_TEST_MODE=success
+            env_args=("${no_openrouter[@]}" OMP_USAGE_TEST_MODE=success
                 OMP_USAGE_TEST_OMP="$fixtures/fake-omp"
                 OMP_USAGE_TEST_EXPECT_PANEL='^5h 5% · 7d 12%$'
                 OMP_USAGE_TEST_EXPECT_FULL_MENU=1) ;;
         fail-stale | disable-midfetch | prefs)
-            env_args=(OMP_USAGE_TEST_MODE="$scenario"
+            env_args=("${no_openrouter[@]}" OMP_USAGE_TEST_MODE="$scenario"
                 OMP_USAGE_TEST_OMP="$fixtures/fake-omp"
                 OMP_USAGE_TEST_EXPECT_PANEL='^5h 5% · 7d 12%$') ;;
         real)

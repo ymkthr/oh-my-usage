@@ -14,6 +14,7 @@ import {renderView} from './model.js';
 /** @typedef {import('./model.js').SectionView} SectionView */
 /** @typedef {import('./model.js').RowView} RowView */
 /** @typedef {import('./model.js').BarView} BarView */
+/** @typedef {import('./model.js').ChartView} ChartView */
 /** @typedef {import('./store.js').UsageStore} UsageStore */
 
 /** @type {import('./model.js').I18n} */
@@ -48,6 +49,43 @@ export class UsageBar extends St.Widget {
         const content = this.get_theme_node().get_content_box(box);
         content.x2 = content.x1 + Math.round((content.x2 - content.x1) * this.#fraction);
         this.#fill.allocate(content);
+    }
+}
+
+export class SpendChart extends St.Widget {
+    static {
+        GObject.registerClass(this);
+    }
+
+    /** @type {number[]} */
+    #fractions;
+
+    /** @param {ChartView['bars']} bars */
+    constructor(bars) {
+        super({style_class: 'oh-my-usage-chart', x_expand: true});
+        this.#fractions = bars.map(bar => bar.fraction);
+        for (const bar of bars)
+            this.add_child(new St.Widget({style_class: `oh-my-usage-chart-bar${bar.today ? ' today' : ''}`}));
+    }
+
+    /** @param {Clutter.ActorBox} box */
+    vfunc_allocate(box) {
+        this.set_allocation(box);
+        const node = this.get_theme_node();
+        const content = node.get_content_box(box);
+        const spacing = node.get_length('spacing');
+        const children = this.get_children();
+        const slot = (content.x2 - content.x1 + spacing) / children.length;
+        const height = content.y2 - content.y1;
+        children.forEach((child, i) => {
+            const childBox = new Clutter.ActorBox({
+                x1: Math.round(content.x1 + i * slot),
+                x2: Math.round(content.x1 + (i + 1) * slot - spacing),
+                y1: content.y2 - Math.round(height * this.#fractions[i]),
+                y2: content.y2,
+            });
+            child.allocate(childBox);
+        });
     }
 }
 
@@ -286,6 +324,8 @@ export class Indicator extends PanelMenu.Button {
             column.add_child(new St.Label({text: section.subtitle, style_class: 'oh-my-usage-section-subtitle'}));
         for (const row of section.rows)
             column.add_child(rowLine(row));
+        if (section.chart !== null)
+            column.add_child(chartBlock(section.chart));
         body.add_child(column);
         this.#sections.addMenuItem(body);
     }
@@ -352,6 +392,21 @@ function rowLine(row) {
         y_align: Clutter.ActorAlign.CENTER,
     }));
     return line;
+}
+
+/**
+ * @param {ChartView} chart
+ * @returns {St.BoxLayout}
+ */
+function chartBlock(chart) {
+    const block = new St.BoxLayout({orientation: Clutter.Orientation.VERTICAL, style_class: 'oh-my-usage-chart-block'});
+    const caption = new St.BoxLayout({style_class: 'oh-my-usage-row'});
+    caption.add_child(new St.Label({text: chart.label, style_class: 'oh-my-usage-row-label'}));
+    caption.add_child(new St.Widget({x_expand: true}));
+    caption.add_child(new St.Label({text: chart.detail, style_class: 'oh-my-usage-row-detail'}));
+    block.add_child(caption);
+    block.add_child(new SpendChart(chart.bars));
+    return block;
 }
 
 /**

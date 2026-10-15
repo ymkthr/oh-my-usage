@@ -9,6 +9,7 @@
  * @property {string|null} tier
  * @property {string} label
  * @property {number|null} usedFraction
+ * @property {number|null} spentUsd  OpenRouter spend in the window; null for omp quotas
  * @property {number|null} resetsAt
  */
 
@@ -24,6 +25,14 @@
  * @property {string|null} email
  * @property {number} resetCredits
  * @property {UsageWindow[]} windows
+ * @property {string|null} [problem]  why the numbers may be stale; shown in the subtitle
+ * @property {SpendDay[]|null} [history]  completed UTC days of spend, drawn as the daily chart
+ */
+
+/**
+ * @typedef {object} SpendDay
+ * @property {string} date  UTC calendar day, YYYY-MM-DD
+ * @property {number} usd
  */
 
 /**
@@ -55,11 +64,28 @@
  */
 
 /**
+ * @typedef {{kind: 'http', status: number}
+ *   | {kind: 'network', detail: string}
+ *   | {kind: 'invalid-json', detail: string}} OpenRouterError
+ */
+
+/**
+ * @typedef {object} OpenRouterState
+ * @property {Account|null} account  null until the first successful read or when no key is set
+ * @property {OpenRouterError|null} error
+ * @property {SpendDay[]|null} history  null without a management key
+ * @property {OpenRouterError|null} historyError
+ */
+
+/** @typedef {{apiKey: string|null, managementKey: string|null}} OpenRouterKeys */
+
+/**
  * @typedef {object} StoreState
  * @property {Snapshot|null} snapshot
  * @property {AccountPolicy[]} policies
  * @property {FetchError|null} error
  * @property {boolean} inFlight
+ * @property {OpenRouterState} [openRouter]
  */
 
 /** @typedef {{fraction: number, level: Level}} BarView */
@@ -77,8 +103,14 @@
  * @typedef {object} RowView
  * @property {string} label
  * @property {number} fraction
- * @property {Level} level
  * @property {string} detail
+ */
+
+/**
+ * @typedef {object} ChartView
+ * @property {string} label
+ * @property {string} detail
+ * @property {{fraction: number, today: boolean}[]} bars  oldest first, today last
  */
 
 /**
@@ -89,6 +121,7 @@
  * @property {string|null} badge
  * @property {boolean} primary
  * @property {RowView[]} rows
+ * @property {ChartView|null} chart
  */
 
 /**
@@ -144,6 +177,7 @@ const PROVIDER_NAMES = new Map([
     ['anthropic', 'Anthropic'],
     ['openai-codex', 'OpenAI Codex'],
     ['opencode-go', 'OpenCode Go'],
+    ['openrouter', 'OpenRouter'],
 ]);
 
 const SHORT_NAMES = new Map([
@@ -153,6 +187,27 @@ const SHORT_NAMES = new Map([
 ]);
 
 const PANEL_TAGS = new Map([['monthly', '1mo']]);
+
+/**
+ * Run by the login shell with -l -i, so keys exported from either the
+ * profile or the rc file are found. The markers cut the values out of whatever
+ * greeting or prompt escapes an interactive shell prints.
+ */
+export const OPENROUTER_KEY_SCRIPT =
+    'printf "\\n__OMU__%s__OMU__%s__OMU__\\n" "$OPENROUTER_API_KEY" "$OPENROUTER_MANAGEMENT_KEY"';
+
+const CHART_DAYS = 30;
+const DAY_MS = 86_400_000;
+
+// OpenRouter counts usage_daily/weekly/monthly in UTC, weeks starting Monday.
+const SPEND_PERIODS = [
+    {field: 'usage_daily', kind: '1d', label: 'Today', next: d => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1)},
+    {field: 'usage_weekly', kind: '7d', label: 'This week', next: d => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(),
+        d.getUTCDate() + ((8 - d.getUTCDay()) % 7 || 7))},
+    {field: 'usage_monthly', kind: 'monthly', label: 'This month', next: d => Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)},
+];
+
+const BUDGET_KINDS = new Map([['daily', '1d'], ['weekly', '7d'], ['monthly', 'monthly']]);
 
 const LEVEL_RANK = {normal: 0, warning: 1, error: 2};
 
@@ -192,6 +247,106 @@ export function parsePolicies(stdout) {
         }));
         return [{provider: entry.provider, selector, priority: finiteOrNull(entry.priority)}];
     });
+}
+
+/**
+ * @param {string} stdout
+ * @returns {OpenRouterKeys}  null for a variable that is unset or empty
+ */
+export function parseShellKeys(stdout) {
+    const match = /__OMU__(.*?)__OMU__(.*?)__OMU__/.exec(stdout);
+    return {apiKey: stringOrNull(match?.[1].trim()), managementKey: stringOrNull(match?.[2].trim())};
+}
+
+/**
+ * Parses the body of OpenRouter's `GET /api/v1/activity`: one row per model
+ * and day over the last 30 completed UTC days, summed here per day. Only
+ * credits spent through OpenRouter count, as in the daily total of `/key`.
+ * The API sends `date` as "YYYY-MM-DD 00:00:00" although its reference shows
+ * a bare date, so only the first ten characters are read.
+ * @param {string} body
+ * @returns {SpendDay[]}  oldest first
+ */
+export function parseOpenRouterActivity(body) {
+    const data = parseJson(body)?.data;
+    if (!Array.isArray(data))
+        throw new Error('no data array');
+
+    const byDate = new Map();
+    for (const item of data) {
+        const date = stringOrNull(item?.date)?.slice(0, 10) ?? null;
+        const usd = finiteOrNull(item?.usage);
+        if (date === null || usd === null || !/^\d{4}-\d{2}-\d{2}$/.test(date))
+            continue;
+        byDate.set(date, (byDate.get(date) ?? 0) + usd);
+    }
+    return [...byDate].sort(([a], [b]) => compareStrings(a, b)).map(([date, usd]) => ({date, usd}));
+}
+
+/**
+ * Parses the body of OpenRouter's `GET /api/v1/key`. Budgets (key limits,
+ * guardrails, workspace budgets) are quotas with a fraction; the daily,
+ * weekly and monthly spend has no ceiling, so it carries only an amount.
+ * @param {string} body
+ * @param {number} now
+ * @returns {Account}
+ */
+export function parseOpenRouterKey(body, now) {
+    const data = parseJson(body)?.data;
+    if (typeof data !== 'object' || data === null)
+        throw new Error('no data object');
+
+    const budgets = Array.isArray(data.budgets) ? data.budgets : [];
+    const today = new Date(now);
+    return {
+        key: 'openrouter:1',
+        provider: 'openrouter',
+        ordinal: 1,
+        accountId: null,
+        orgId: null,
+        org: null,
+        plan: null,
+        email: null,
+        resetCredits: 0,
+        windows: [
+            ...budgets.flatMap(budget => budgetWindow(budget) ?? []),
+            ...SPEND_PERIODS.flatMap(period => {
+                const spent = finiteOrNull(data[period.field]);
+                return spent === null ? [] : [{
+                    id: `openrouter:${period.field}`,
+                    kind: period.kind,
+                    tier: null,
+                    label: period.label,
+                    usedFraction: null,
+                    spentUsd: spent,
+                    resetsAt: period.next(today),
+                }];
+            }),
+        ],
+    };
+}
+
+/**
+ * @param {object} budget
+ * @returns {UsageWindow|null}
+ */
+function budgetWindow(budget) {
+    const scope = stringOrNull(budget?.scope);
+    const limit = finiteOrNull(budget?.limit_usd);
+    const spent = finiteOrNull(budget?.spend_usd);
+    if (scope === null || limit === null || spent === null)
+        return null;
+
+    const resetsAt = typeof budget.resets_at === 'string' ? Date.parse(budget.resets_at) : NaN;
+    return {
+        id: `openrouter:budget:${scope}:${budget.guardrail_id ?? budget.budget_id ?? ''}`,
+        kind: BUDGET_KINDS.get(budget.reset_interval) ?? 'total',
+        tier: null,
+        label: titleCase(scope),
+        usedFraction: limit > 0 ? clamp01(spent / limit) : 1,
+        spentUsd: spent,
+        resetsAt: finiteOrNull(resetsAt),
+    };
 }
 
 /**
@@ -253,6 +408,7 @@ function parseWindow(limit) {
         tier: stringOrNull(limit.scope.tier),
         label: labelOf(limit, window, kind),
         usedFraction: clamp01(limit.amount?.usedFraction),
+        spentUsd: null,
         resetsAt: finiteOrNull(window.resetsAt),
     };
 }
@@ -350,7 +506,8 @@ function policyOf(policies, account) {
 export function renderView(state, prefs, now, i18n = IDENTITY_I18N) {
     const _ = i18n.gettext;
     const {snapshot, policies, error, inFlight} = state;
-    const accounts = snapshot?.accounts ?? [];
+    const ompAccounts = snapshot?.accounts ?? [];
+    const accounts = [...ompAccounts, ...openRouterAccounts(state.openRouter, i18n)].sort(compareAccounts);
     const groups = groupsOf(accounts, policies);
     const primary = primaryOf(groups.flatMap(g => g.members.map(m => m.account)), prefs.primaryAccount);
 
@@ -371,13 +528,13 @@ export function renderView(state, prefs, now, i18n = IDENTITY_I18N) {
     }
 
     let notice = null;
-    if (snapshot && accounts.length === 0)
+    if (snapshot && ompAccounts.length === 0)
         notice = _('omp reports no provider accounts');
     else if (!snapshot && error)
         notice = describeError(error, i18n);
 
-    const providers = notice === null ? groups.map(group => providerOf(group, primary, now, i18n)) : [];
-    const flagged = notice === null ? flaggedOf(accounts, primary) : [];
+    const providers = groups.map(group => providerOf(group, primary, now, i18n));
+    const flagged = flaggedOf(accounts, primary);
     return {
         panel: panelOf(primary, state, panelAlertOf(flagged)),
         status,
@@ -386,6 +543,25 @@ export function renderView(state, prefs, now, i18n = IDENTITY_I18N) {
         providers,
         alerts: flagged.map(({account, window}) => alertOf(account, window, now)),
     };
+}
+
+/**
+ * @param {OpenRouterState|undefined} openRouter
+ * @param {I18n} i18n
+ * @returns {Account[]}
+ */
+function openRouterAccounts(openRouter, i18n) {
+    if (!openRouter || (openRouter.account === null && openRouter.error === null))
+        return [];
+    const account = openRouter.account ?? {
+        key: 'openrouter:1', provider: 'openrouter', ordinal: 1, accountId: null, orgId: null,
+        org: null, plan: null, email: null, resetCredits: 0, windows: [],
+    };
+    const problems = [
+        openRouter.error === null ? null : describeOpenRouterError(openRouter.error, 'key', i18n),
+        openRouter.historyError === null ? null : describeOpenRouterError(openRouter.historyError, 'activity', i18n),
+    ].filter(problem => problem !== null);
+    return [{...account, problem: problems.length ? problems.join(' · ') : null, history: openRouter.history}];
 }
 
 /**
@@ -527,28 +703,79 @@ function providerOf({provider, members}, primary, now, i18n) {
 function sectionOf(account, policy, primary, now, i18n) {
     const credits = account.resetCredits;
     const priority = policy?.priority ?? null;
-    const parts = [suffixOf(account), priority === null ? null : fmt(i18n.gettext('priority %s'), priority)];
+    const parts = [
+        suffixOf(account),
+        priority === null ? null : fmt(i18n.gettext('priority %s'), priority),
+        account.problem ?? null,
+    ];
     return {
         key: account.key,
         title: account.email ?? fmt(i18n.gettext('account %s'), account.ordinal),
         subtitle: parts.filter(part => part !== null).join(' · '),
         badge: credits > 0 ? fmt(i18n.ngettext('✦ %s reset', '✦ %s resets', credits), credits) : null,
         primary,
-        rows: account.windows.map(w => rowOf(w, now)),
+        rows: account.windows.map(w => rowOf(w, now, largestSpendOf(account))),
+        chart: account.history ? chartOf(account, account.history, now, i18n) : null,
     };
+}
+
+/**
+ * @param {Account} account
+ * @param {SpendDay[]} history
+ * @param {number} now
+ * @param {I18n} i18n
+ * @returns {ChartView}
+ */
+function chartOf(account, history, now, i18n) {
+    const today = utcDay(now);
+    const spent = new Map(history.map(day => [day.date, day.usd]));
+    spent.set(today, account.windows.find(w => w.kind === '1d')?.spentUsd ?? 0);
+    const days = Array.from({length: CHART_DAYS}, (_, i) => utcDay(now - (CHART_DAYS - 1 - i) * DAY_MS));
+    const amounts = days.map(day => spent.get(day) ?? 0);
+    const peak = Math.max(0, ...amounts);
+    return {
+        label: fmt(i18n.gettext('Last %s days'), CHART_DAYS),
+        detail: fmt(i18n.gettext('peak %s'), usdOf(peak)),
+        bars: amounts.map((usd, i) => ({fraction: peak > 0 ? usd / peak : 0, today: i === CHART_DAYS - 1})),
+    };
+}
+
+/** @param {number} time @returns {string} */
+function utcDay(time) {
+    return new Date(time).toISOString().slice(0, 10);
+}
+
+/**
+ * @param {Account} account
+ * @returns {number}
+ */
+function largestSpendOf(account) {
+    return Math.max(0, ...account.windows.filter(w => w.usedFraction === null).map(w => w.spentUsd ?? 0));
+}
+
+/**
+ * @param {UsageWindow} w
+ * @param {number} scale
+ * @returns {number}
+ */
+function barFractionOf(w, scale) {
+    if (w.usedFraction !== null)
+        return w.usedFraction;
+    return w.spentUsd === null || scale <= 0 ? 0 : w.spentUsd / scale;
 }
 
 /**
  * @param {UsageWindow} w
  * @param {number} now
+ * @param {number} scale
  * @returns {RowView}
  */
-function rowOf(w, now) {
+function rowOf(w, now, scale) {
     return {
         label: w.tier ? `${w.label} (${titleCase(w.tier)})` : w.label,
-        fraction: w.usedFraction ?? 0,
+        fraction: barFractionOf(w, scale),
         level: levelOf(w.usedFraction),
-        detail: `${percentOf(w.usedFraction)} · ${formatRemaining(w.resetsAt, now)}`,
+        detail: `${amountOf(w)} · ${formatRemaining(w.resetsAt, now)}`,
     };
 }
 
@@ -573,7 +800,7 @@ function flaggedOf(accounts, primary) {
  * @returns {AlertView}
  */
 function alertOf(account, window, now) {
-    const {label, detail, level} = rowOf(window, now);
+    const {label, detail, level} = rowOf(window, now, largestSpendOf(account));
     return {key: account.key, title: accountTitle(account), label, detail, level};
 }
 
@@ -604,7 +831,8 @@ function panelOf(primary, state, alert) {
     }
 
     const windows = panelWindowsOf(primary);
-    const bars = windows.map(w => ({fraction: w.usedFraction ?? 0, level: levelOf(w.usedFraction)}));
+    const scale = largestSpendOf(primary);
+    const bars = windows.map(w => ({fraction: barFractionOf(w, scale), level: levelOf(w.usedFraction)}));
     return {
         bars,
         text: windows.map(panelTextOf).join(' · ') || '!',
@@ -616,7 +844,35 @@ function panelOf(primary, state, alert) {
 
 /** @param {UsageWindow} w @returns {string} */
 function panelTextOf(w) {
-    return `${PANEL_TAGS.get(w.kind) ?? w.kind} ${percentOf(w.usedFraction)}`;
+    return `${PANEL_TAGS.get(w.kind) ?? w.kind} ${amountOf(w)}`;
+}
+
+/**
+ * @param {OpenRouterError} error
+ * @param {'key'|'activity'} request
+ * @param {I18n} i18n
+ * @returns {string}
+ */
+function describeOpenRouterError(error, request, i18n) {
+    const _ = i18n.gettext;
+    const activity = request === 'activity';
+    switch (error.kind) {
+    case 'http':
+        if (error.status === 401 || error.status === 403) {
+            return activity
+                ? fmt(_('OpenRouter rejected the management key (HTTP %s)'), error.status)
+                : fmt(_('OpenRouter rejected the API key (HTTP %s)'), error.status);
+        }
+        return activity
+            ? fmt(_('OpenRouter activity request failed (HTTP %s)'), error.status)
+            : fmt(_('OpenRouter request failed (HTTP %s)'), error.status);
+    case 'network':
+        return fmt(_('Could not reach OpenRouter: %s'), error.detail);
+    default:
+        return activity
+            ? fmt(_('OpenRouter returned unexpected activity data (%s)'), error.detail)
+            : fmt(_('OpenRouter returned unexpected data (%s)'), error.detail);
+    }
 }
 
 /**
@@ -645,9 +901,16 @@ function moreUsed(a, b) {
     return (b.usedFraction ?? -1) > (a.usedFraction ?? -1) ? b : a;
 }
 
-/** @param {number|null} usedFraction @returns {string} */
-function percentOf(usedFraction) {
-    return usedFraction === null ? '?' : `${Math.round(usedFraction * 100)}%`;
+/** @param {UsageWindow} w @returns {string} */
+function amountOf(w) {
+    if (w.usedFraction !== null)
+        return `${Math.round(w.usedFraction * 100)}%`;
+    return w.spentUsd === null ? '?' : usdOf(w.spentUsd);
+}
+
+/** @param {number} usd @returns {string} */
+function usdOf(usd) {
+    return `$${usd.toFixed(2)}`;
 }
 
 /** @param {string} provider @returns {string} */

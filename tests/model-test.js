@@ -6,7 +6,7 @@ import System from 'system';
 
 import {
     parseUsage, parsePolicies, renderView, levelOf, formatRemaining, formatAge, fmt,
-    primaryOf, panelWindowsOf, accountTitle, IDENTITY_I18N,
+    primaryOf, panelWindowsOf, accountTitle, IDENTITY_I18N, parseShellKeys, parseOpenRouterKey, parseOpenRouterActivity,
 } from '../src/model.js';
 
 let checks = 0;
@@ -60,7 +60,7 @@ eq('parse: anthropic windows keep wire order and tier',
     anthropic.windows.map(w => [w.kind, w.tier]), [['5h', null], ['7d', null], ['7d', 'fable']]);
 eq('parse: tiered window carries id, label, fraction and reset time',
     anthropic.windows[2],
-    {id: 'anthropic:7d:fable', kind: '7d', tier: 'fable', label: '7 Day', usedFraction: 0.12, resetsAt: 1791874799775});
+    {id: 'anthropic:7d:fable', kind: '7d', tier: 'fable', label: '7 Day', usedFraction: 0.12, spentUsd: null, resetsAt: 1791874799775});
 eq('parse: org and plan come from metadata',
     snapshot.accounts.map(a => [a.org, a.plan]),
     [['Acme', null], ['plus', 'plus'], ['team', 'team'], [null, 'OpenCode Go']]);
@@ -363,6 +363,151 @@ eq('view: no accounts notice', empty.notice, 'omp reports no provider accounts')
 eq('view: no accounts panel', empty.panel, {bars: [], text: '!', level: 'normal', stale: false, alert: null});
 eq('alerts: none under the no-accounts notice', empty.alerts, []);
 eq('view: no accounts status still shows the age', empty.status, 'updated just now');
+
+eq('shell keys: the values between the markers, around banner and prompt noise',
+    parseShellKeys('Welcome!\n\x1b]0;title\x07\n__OMU__sk-or-v1-abc__OMU__sk-or-mgmt__OMU__\n% '),
+    {apiKey: 'sk-or-v1-abc', managementKey: 'sk-or-mgmt'});
+eq('shell keys: an unset management key leaves only the API key',
+    parseShellKeys('\n__OMU__sk-or-v1-abc__OMU____OMU__\n'), {apiKey: 'sk-or-v1-abc', managementKey: null});
+eq('shell keys: unset variables are no keys', parseShellKeys('\n__OMU____OMU____OMU__\n'), {apiKey: null, managementKey: null});
+eq('shell keys: a shell that never ran the script is no key',
+    parseShellKeys('zsh: command not found'), {apiKey: null, managementKey: null});
+
+// The API sends dates as "YYYY-MM-DD 00:00:00" (seen live); its reference shows bare dates.
+const activityBody = JSON.stringify({data: [
+    {date: '2026-10-13 00:00:00', model: 'openai/gpt-5', usage: 0.16, byok_usage_inference: 9, requests: 4},
+    {date: '2026-10-13', model: 'anthropic/claude', usage: 0.16, requests: 1},
+    {date: '2026-09-20 00:00:00', model: 'openai/gpt-5', usage: 0.64, requests: 2},
+    {date: '2026-10-12', model: 'x', usage: 'n/a'},
+    {date: 'yesterday', usage: 1},
+    null,
+]});
+eq('activity: rows are summed per UTC day whether the date carries a time or not, oldest first, malformed rows skipped',
+    parseOpenRouterActivity(activityBody), [{date: '2026-09-20', usd: 0.64}, {date: '2026-10-13', usd: 0.32}]);
+eq('activity: an empty month is an empty history', parseOpenRouterActivity('{"data":[]}'), []);
+throws('activity: an error body is rejected', () => parseOpenRouterActivity('{"error":{"code":403}}'), /no data array/);
+
+const orNow = Date.UTC(2026, 9, 14, 15);
+const keyBody = (budgets, spend = {usage_daily: 0.04, usage_weekly: 0.08, usage_monthly: 0.16}) => JSON.stringify({data: {
+    label: 'sk-or-v1-abc...xyz', limit: null, usage: 79.52, ...spend, budgets,
+}});
+const spendOnly = parseOpenRouterKey(keyBody([]), orNow);
+eq('openrouter: one account under the openrouter provider', [spendOnly.key, spendOnly.provider], ['openrouter:1', 'openrouter']);
+eq('openrouter: daily, weekly and monthly spend reset at the next UTC day, Monday and month',
+    spendOnly.windows.map(w => [w.label, w.kind, w.usedFraction, w.spentUsd, new Date(w.resetsAt).toISOString()]), [
+        ['Today', '1d', null, 0.04, '2026-10-15T00:00:00.000Z'],
+        ['This week', '7d', null, 0.08, '2026-10-19T00:00:00.000Z'],
+        ['This month', 'monthly', null, 0.16, '2026-11-01T00:00:00.000Z'],
+    ]);
+eq('openrouter: on a Monday the week resets the next Monday',
+    new Date(parseOpenRouterKey(keyBody([]), Date.UTC(2026, 9, 12, 1)).windows[1].resetsAt).toISOString(),
+    '2026-10-19T00:00:00.000Z');
+
+const withLimit = parseOpenRouterKey(keyBody([
+    {scope: 'key_limit', limit_usd: 50, spend_usd: 46, reset_interval: 'weekly', resets_at: '2026-10-19T00:00:00.000Z'},
+    {scope: 'workspace', budget_id: 'b1', limit_usd: 0, spend_usd: 0, reset_interval: null, resets_at: null},
+    {scope: 'member', limit_usd: 'lots'},
+]), orNow);
+eq('openrouter: budgets come first as quotas with fraction, reset time and spend',
+    withLimit.windows.slice(0, 2).map(w => [w.id, w.label, w.kind, w.usedFraction, w.spentUsd, w.resetsAt]), [
+        ['openrouter:budget:key_limit:', 'Key Limit', '7d', 0.92, 46, Date.UTC(2026, 9, 19)],
+        ['openrouter:budget:workspace:b1', 'Workspace', 'total', 1, 0, null],
+    ]);
+eq('openrouter: a budget without numbers is skipped', withLimit.windows.length, 5);
+throws('openrouter: an error body is rejected', () => parseOpenRouterKey('{"error":{"code":401}}', orNow), /no data object/);
+throws('openrouter: HTML is rejected', () => parseOpenRouterKey('<html>', orNow), /not JSON/);
+
+const orState = (account, error = null, history = null, historyError = null) =>
+    ({...fresh, openRouter: {account, error, history, historyError}});
+const orOf = view => view.providers.find(p => p.provider === 'openrouter');
+
+eq('openrouter view: no key leaves OpenRouter out of the menu',
+    orOf(renderView(orState(null), {primaryAccount: ''}, orNow)), undefined);
+const orView = renderView(orState(spendOnly), {primaryAccount: ''}, orNow);
+eq('openrouter view: providers stay in display-name order',
+    orView.providers.map(p => p.title), ['Anthropic', 'OpenAI Codex', 'OpenCode Go', 'OpenRouter']);
+eq('openrouter view: spend bars are drawn against the month and show dollars with the time to reset',
+    orOf(orView).accounts[0].rows, [
+        {label: 'Today', fraction: 0.25, level: 'normal', detail: '$0.04 · 9h0m'},
+        {label: 'This week', fraction: 0.5, level: 'normal', detail: '$0.08 · 4d9h'},
+        {label: 'This month', fraction: 1, level: 'normal', detail: '$0.16 · 17d9h'},
+    ]);
+eq('openrouter view: the default primary stays the first omp account', orView.panel.text, '5h 5% · 7d 12%');
+eq('openrouter view: spend never raises an alert', orView.alerts.map(a => a.key), v.alerts.map(a => a.key));
+const orPrimary = renderView(orState(spendOnly), {primaryAccount: 'openrouter:1'}, orNow).panel;
+eq('openrouter view: as primary the panel shows the weekly spend and its share of the month',
+    [orPrimary.bars, orPrimary.text, orPrimary.level], [[{fraction: 0.5, level: 'normal'}], '7d $0.08', 'normal']);
+
+const weekAboveMonth = parseOpenRouterKey(keyBody([], {usage_daily: 0.04, usage_weekly: 0.32, usage_monthly: 0.16}), orNow);
+eq('openrouter view: the largest window sets the scale, even a week holding the previous month above the month',
+    orOf(renderView(orState(weekAboveMonth), {primaryAccount: ''}, orNow)).accounts[0].rows.map(r => r.fraction), [0.125, 1, 0.5]);
+eq('openrouter view: nothing spent draws empty bars',
+    orOf(renderView(orState(parseOpenRouterKey(keyBody([], {usage_daily: 0, usage_weekly: 0, usage_monthly: 0}), orNow)),
+        {primaryAccount: ''}, orNow)).accounts[0].rows.map(r => [r.fraction, r.detail]),
+    [[0, '$0.00 · 9h0m'], [0, '$0.00 · 4d9h'], [0, '$0.00 · 17d9h']]);
+
+const limited = renderView(orState(withLimit), {primaryAccount: ''}, orNow);
+eq('openrouter view: a budget row has a bar and a level',
+    orOf(limited).accounts[0].rows[0], {label: 'Key Limit', fraction: 0.92, level: 'error', detail: '92% · 4d9h'});
+eq('openrouter view: spent budgets are alerts, most used first',
+    limited.alerts.map(a => [a.key, a.label, a.detail]).filter(([key]) => key === 'openrouter:1'),
+    [['openrouter:1', 'Workspace', '100% · —'], ['openrouter:1', 'Key Limit', '92% · 4d9h']]);
+
+const rejected = renderView(orState(spendOnly, {kind: 'http', status: 401}), {primaryAccount: ''}, orNow);
+eq('openrouter view: a failure keeps the last rows', orOf(rejected).accounts[0].rows.length, 3);
+eq('openrouter view: a rejected key is named in the subtitle',
+    orOf(rejected).accounts[0].subtitle, 'OpenRouter rejected the API key (HTTP 401)');
+eq('openrouter view: an OpenRouter failure does not mark the omp status or panel',
+    [rejected.statusLevel, rejected.panel.stale], ['normal', false]);
+eq('openrouter view: a first failure still shows the section with the reason',
+    orOf(renderView(orState(null, {kind: 'network', detail: 'Name resolution failed'}), {primaryAccount: ''}, orNow))
+        .accounts.map(s => [s.title, s.subtitle, s.rows]),
+    [['account 1', 'Could not reach OpenRouter: Name resolution failed', []]]);
+eq('openrouter view: other failures',
+    [{kind: 'http', status: 500}, {kind: 'invalid-json', detail: 'no data object'}]
+        .map(error => orOf(renderView(orState(null, error), {primaryAccount: ''}, orNow)).accounts[0].subtitle),
+    ['OpenRouter request failed (HTTP 500)', 'OpenRouter returned unexpected data (no data object)']);
+
+eq('chart: without a management key there is no chart', orOf(orView).accounts[0].chart, null);
+const charted = orOf(renderView(orState(spendOnly, null, parseOpenRouterActivity(activityBody)), {primaryAccount: ''}, orNow))
+    .accounts[0].chart;
+eq('chart: thirty bars ending today, scaled to the peak day', [charted.label, charted.detail, charted.bars.length],
+    ['Last 30 days', 'peak $0.64', 30]);
+eq('chart: days outside the window are dropped and unmentioned days are empty',
+    charted.bars.map((bar, i) => [bar.fraction, bar.today]).filter(([fraction]) => fraction > 0),
+    [[1, false], [0.5, false], [0.0625, true]]);
+eq('chart: the peak day sits 24 days before today', charted.bars.findIndex(bar => bar.fraction === 1), 29 - 24);
+eq('chart: only the last bar is today', charted.bars.map(bar => bar.today).lastIndexOf(true), 29);
+eq('chart: today comes from the daily total, so an empty history makes today the peak',
+    orOf(renderView(orState(spendOnly, null, []), {primaryAccount: ''}, orNow)).accounts[0].chart.bars.map(bar => bar.fraction).slice(-2),
+    [0, 1]);
+eq('chart: nothing spent at all draws empty bars under a zero peak',
+    (() => {
+        const quiet = parseOpenRouterKey(keyBody([], {usage_daily: 0, usage_weekly: 0, usage_monthly: 0}), orNow);
+        const chart = orOf(renderView(orState(quiet, null, []), {primaryAccount: ''}, orNow)).accounts[0].chart;
+        return [chart.detail, chart.bars.every(bar => bar.fraction === 0)];
+    })(), ['peak $0.00', true]);
+eq('chart: omp accounts never have one', renderView(fresh, {primaryAccount: ''}, orNow).providers.flatMap(p => p.accounts).map(s => s.chart),
+    [null, null, null, null]);
+
+const historyDown = orOf(renderView(orState(spendOnly, null, parseOpenRouterActivity(activityBody), {kind: 'http', status: 401}),
+    {primaryAccount: ''}, orNow)).accounts[0];
+eq('chart: a rejected management key is named and the last history stays drawn',
+    [historyDown.subtitle, historyDown.chart.detail], ['OpenRouter rejected the management key (HTTP 401)', 'peak $0.64']);
+eq('chart: both failures are listed',
+    orOf(renderView(orState(spendOnly, {kind: 'http', status: 500}, [], {kind: 'http', status: 500}), {primaryAccount: ''}, orNow))
+        .accounts[0].subtitle,
+    'OpenRouter request failed (HTTP 500) · OpenRouter activity request failed (HTTP 500)');
+eq('chart: unexpected activity data is named',
+    orOf(renderView(orState(spendOnly, null, null, {kind: 'invalid-json', detail: 'no data array'}), {primaryAccount: ''}, orNow))
+        .accounts[0].subtitle,
+    'OpenRouter returned unexpected activity data (no data array)');
+
+const ompDown = renderView({snapshot: null, policies: [], error: exitError, inFlight: false,
+    openRouter: {account: spendOnly, error: null, history: null, historyError: null}},
+    {primaryAccount: ''}, orNow);
+eq('openrouter view: OpenRouter stays visible under an omp failure notice',
+    [ompDown.notice !== null, ompDown.providers.map(p => p.provider)], [true, ['openrouter']]);
 
 print(failures === 0 ? `# all ${checks} checks passed` : `# ${failures} of ${checks} checks failed`);
 System.exit(failures === 0 ? 0 : 1);
