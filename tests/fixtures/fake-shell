@@ -1,0 +1,6 @@
+#!/bin/sh
+# Stands in for the login shell: greets like an rc file would, then runs the
+# -c script with FAKE_LOGIN_PATH prepended to PATH.
+echo 'Welcome to fake-shell'
+while [ "$1" != -c ]; do shift; done
+PATH="${FAKE_LOGIN_PATH:+$FAKE_LOGIN_PATH:}$PATH" exec /bin/sh -c "$2"

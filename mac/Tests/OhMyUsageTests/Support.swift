@@ -10,6 +10,7 @@ let repoRoot = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()
 let fixtures = repoRoot.appendingPathComponent("tests/fixtures")
 let fakeOmpPath = fixtures.appendingPathComponent("fake-omp").path
+let fakeShellPath = fixtures.appendingPathComponent("fake-shell").path
 let policiesLine = "config get auth.accountPolicies --json"
 
 @MainActor
@@ -30,6 +31,8 @@ struct FakeOmp {
         setenv("FAKE_OMP_LOG", log.path, 1)
         setenv("FAKE_OMP_MODE", mode, 1)
         unsetenv("FAKE_OMP_POLICY_MODE")
+        setenv("SHELL", fakeShellPath, 1)
+        unsetenv("FAKE_LOGIN_PATH")
     }
 
     var lines: [String] {

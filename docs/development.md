@@ -48,6 +48,8 @@ open -n dist/oh-my-usage.app --args -ompPath "$PWD/tests/fixtures/fake-omp"
 
 設定は UserDefaults に `ompPath`、`refreshInterval`、`panelDisplay`、`primaryAccount` の名前で入る。起動引数に `-ompPath <path>` のように渡すと、保存した値より優先される。fake-omp に向けるときはこれを使う。
 
+`make mac-test` は `SHELL` を `tests/fixtures/fake-shell` に向ける。アプリが `PATH` を読むときに手元のシェル設定を走らせないためだ。fake-shell は環境変数 `FAKE_LOGIN_PATH` を `PATH` の先頭に足して `-c` のスクリプトを実行するので、ログインシェルにだけあるインタプリタを再現できる。
+
 Bartender や Barbee のようなメニューバー整理アプリを使っていると、新しい項目が隠れて見えないことがある。その場合は起動引数に `"-NSStatusItem Preferred Position Item-0" 400` を足すと、画面の右端から 400 pt の位置に出る。AppKit はこの位置を `io.github.ymkthr.oh-my-usage` に保存するので、確かめ終えたら `defaults delete io.github.ymkthr.oh-my-usage` で消す。
 
 ## macOS 版のリリースは tag を push する

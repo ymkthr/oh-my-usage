@@ -119,6 +119,29 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertEqual(fake.lines, ["usage --json", policiesLine])
     }
 
+    func testOmpInterpreterOnlyOnTheLoginShellPathStillRuns() async throws {
+        let fake = FakeOmp()
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("login-path-\(UUID().uuidString)")
+        let bin = dir.appendingPathComponent("bin")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
+        let interpreter = bin.appendingPathComponent("fake-bun")
+        try "#!/bin/sh\nexec /bin/sh \"$@\"\n".write(to: interpreter, atomically: true, encoding: .utf8)
+        let omp = dir.appendingPathComponent("omp")
+        try "#!/usr/bin/env fake-bun\nexec '\(fakeOmpPath)' \"$@\"\n".write(to: omp, atomically: true, encoding: .utf8)
+        for file in [interpreter, omp] {
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path)
+        }
+        setenv("FAKE_LOGIN_PATH", bin.path, 1)
+        let store = makeStore(ompPath: omp.path)
+
+        store.refresh(.read)
+        try await settled(store)
+
+        XCTAssertNil(store.state.error, "the shebang interpreter resolves through the login PATH")
+        XCTAssertEqual(fake.lines, ["usage --json", policiesLine])
+    }
+
     func testDestroyDuringAReadKillsTheChildAndGoesSilent() async throws {
         let fake = FakeOmp(mode: "hang")
         let before = Set(childPids())
