@@ -5,6 +5,14 @@ func defaultOmpPath() -> String {
     URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".bun/bin/omp").path
 }
 
+/// The markers keep rc-file greetings around the value out of it.
+private let loginPathScript = #"printf "\n__OMU__%s__OMU__\n" "$PATH""#
+
+private func markedValue(_ stdout: String) -> String? {
+    let parts = stdout.components(separatedBy: "__OMU__")
+    return parts.count >= 3 && !parts[1].isEmpty ? parts[1] : nil
+}
+
 enum Request {
     case read, invalidate
 
@@ -36,6 +44,9 @@ final class UsageStore {
     private var child: Process?
     private var timer: Timer?
     private var destroyed = false
+    /// omp is usually a `#!/usr/bin/env bun` script, and bun is rarely on the
+    /// GUI PATH, so children run under the login shell's PATH, read once.
+    private var childPath: String?
 
     init(script: ModelScript, ompPath: String, intervalSeconds: Int, watchdogSeconds: TimeInterval = 60) {
         self.script = script
@@ -104,18 +115,19 @@ final class UsageStore {
             return
         }
 
+        let environment = await childEnvironment()
         do {
             if request == .invalidate {
-                _ = try await spawn(path, ["usage", "invalidate"])
+                _ = try await spawn(path, ["usage", "invalidate"], environment: environment)
             }
-            let run = try await spawn(path, ["usage", "--json"])
+            let run = try await spawn(path, ["usage", "--json"], environment: environment)
             guard run.status == 0 else {
                 state.error = .exit(status: run.status, stderrHead: firstLine(run.stderr))
                 return
             }
             state.snapshot = try script.parseUsage(run.stdout)
             state.error = nil
-            await readPolicies(path)
+            await readPolicies(path, environment: environment)
         } catch let error as FetchError {
             state.error = error
         } catch {
@@ -125,20 +137,33 @@ final class UsageStore {
 
     /// Priorities only order the accounts, so an omp that cannot answer the
     /// config read keeps the last policies instead of failing the refresh.
-    private func readPolicies(_ path: String) async {
-        guard let run = try? await spawn(path, ["config", "get", "auth.accountPolicies", "--json"]),
+    private func readPolicies(_ path: String, environment: [String: String]) async {
+        guard let run = try? await spawn(path, ["config", "get", "auth.accountPolicies", "--json"], environment: environment),
               run.status == 0,
               let policies = script.parsePolicies(run.stdout)
         else { return }
         state.policies = policies
     }
 
-    private func spawn(_ path: String, _ arguments: [String]) async throws -> Completed {
+    /// `-i` as well as `-l`, because PATH additions often live in the interactive rc file.
+    private func childEnvironment() async -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        if childPath == nil {
+            let shell = environment["SHELL"] ?? "/bin/sh"
+            let run = try? await spawn(shell, ["-l", "-i", "-c", loginPathScript], environment: environment)
+            childPath = run.flatMap { markedValue($0.stdout) } ?? environment["PATH"]
+        }
+        environment["PATH"] = childPath
+        return environment
+    }
+
+    private func spawn(_ path: String, _ arguments: [String], environment: [String: String]) async throws -> Completed {
         guard !destroyed else { throw Cancelled() }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: path)
         process.arguments = arguments
+        process.environment = environment
         process.standardInput = FileHandle.nullDevice
         let stdout = Pipe()
         let stderr = Pipe()
