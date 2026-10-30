@@ -199,6 +199,7 @@ final class StatusItemController: NSObject, NSMenuDelegate, NSWindowDelegate {
     /// macOS 26), leaving the window behind the active app without keyboard
     /// focus. The app turns regular, with a Dock icon, only while it is open.
     @objc private func openSettings() {
+        settings.reloadLaunchAtLogin()
         NSApp.setActivationPolicy(.regular)
         NSApp.activate()
         settingsWindow.makeKeyAndOrderFront(nil)
