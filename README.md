@@ -41,7 +41,7 @@ brew install --cask ymkthr/tap/oh-my-usage
 open /Applications/oh-my-usage.app
 ```
 
-Dock には出ず、メニューバーにだけ出る。ログイン時に起動させたいときは、システム設定の「一般」→「ログイン項目」に `oh-my-usage.app` を加える。
+Dock には出ず、メニューバーにだけ出る。初めて起動したときに、ログイン時に開く項目として自分を登録する。ログイン時に開かせたくないなら、メニューの「Settings…」で「Open at login」を外す。システム設定の「一般」→「ログイン項目」から外しても同じだ。以前の版で `oh-my-usage.app` を手でログイン項目に加えていたなら、そちらは消してよい。
 
 アプリは Apple の公証を受けていない。そのままだと初回起動で Gatekeeper に止められるので、cask はインストール時に隔離属性 (`com.apple.quarantine`) を外している。
 
