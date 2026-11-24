@@ -1,0 +1,10 @@
+#!/bin/sh
+if [ "${FAKE_AGY_MODE:-ok}" = fail ]; then
+    printf '%s\n' 'fake-agy: unavailable' >&2
+    exit 1
+fi
+if [ "${FAKE_AGY_MODE:-ok}" = invalid ]; then
+    printf '%s\n' 'not json'
+    exit 0
+fi
+cat "$(dirname "$0")/agy-usage.json"

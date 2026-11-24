@@ -64,6 +64,12 @@
  */
 
 /**
+ * @typedef {{kind: 'spawn', path: string, detail: string}
+ *   | {kind: 'exit', status: number, stderrHead: string}
+ *   | {kind: 'invalid-json', detail: string}} AgyError
+ */
+
+/**
  * @typedef {{kind: 'http', status: number}
  *   | {kind: 'network', detail: string}
  *   | {kind: 'invalid-json', detail: string}} OpenRouterError
@@ -80,12 +86,19 @@
 /** @typedef {{apiKey: string|null, managementKey: string|null}} OpenRouterKeys */
 
 /**
+ * @typedef {object} AntigravityState
+ * @property {Account|null} account
+ * @property {AgyError|null} error
+ */
+
+/**
  * @typedef {object} StoreState
  * @property {Snapshot|null} snapshot
  * @property {AccountPolicy[]} policies
  * @property {FetchError|null} error
  * @property {boolean} inFlight
  * @property {OpenRouterState} [openRouter]
+ * @property {AntigravityState} [antigravity]
  */
 
 /** @typedef {{fraction: number, level: Level}} BarView */
@@ -175,10 +188,13 @@ const ERROR_FRACTION = 0.9;
 
 const PROVIDER_NAMES = new Map([
     ['anthropic', 'Anthropic'],
+    ['antigravity-cli', 'Antigravity'],
     ['openai-codex', 'OpenAI Codex'],
     ['opencode-go', 'OpenCode Go'],
     ['openrouter', 'OpenRouter'],
 ]);
+
+const WINDOW_LABELS = {'5h': '5 Hour', weekly: 'Weekly'};
 
 const SHORT_NAMES = new Map([
     ['anthropic', 'Claude'],
@@ -187,6 +203,9 @@ const SHORT_NAMES = new Map([
 ]);
 
 const PANEL_TAGS = new Map([['monthly', '1mo']]);
+
+export const LOGIN_PATH_SCRIPT =
+    'printf "\\n__OMU__%s__OMU__\\n" "$PATH"';
 
 /**
  * Run by the login shell with -l -i, so keys exported from either the
@@ -226,6 +245,45 @@ export function parseUsage(stdout) {
     const accounts = wire.reports.map(report => parseAccount(report ?? {}, ordinals));
     accounts.sort(compareAccounts);
     return {generatedAt: finiteOr(wire.generatedAt, Date.now()), accounts};
+}
+
+/**
+ * @param {string} stdout
+ * @returns {Account}
+ */
+export function parseAgyUsage(stdout) {
+    const wire = parseJson(stdout);
+    const groups = wire?.command?.data?.groups;
+    if (!Array.isArray(groups))
+        throw new Error('no command.data.groups array');
+
+    return {
+        key: 'antigravity-cli:1',
+        provider: 'antigravity-cli',
+        ordinal: 1,
+        accountId: null,
+        orgId: null,
+        org: null,
+        plan: null,
+        email: null,
+        resetCredits: 0,
+        windows: groups.flatMap(group => (Array.isArray(group?.buckets) ? group.buckets : [])
+            .filter(bucket => bucket?.disabled !== true)
+            .map(bucket => {
+                const remaining = finiteOrNull(bucket?.remaining_fraction);
+                const parsedReset = typeof bucket?.reset_time === 'string' ? Date.parse(bucket.reset_time) : NaN;
+                const window = stringOrNull(bucket?.window) ?? '';
+                return {
+                    id: String(bucket?.id ?? ''),
+                    kind: window === 'weekly' ? '7d' : window,
+                    tier: null,
+                    label: `${String(group?.name ?? '')} · ${WINDOW_LABELS[window] ?? String(bucket?.name ?? '')}`,
+                    usedFraction: remaining === null ? null : clamp01(1 - remaining),
+                    spentUsd: null,
+                    resetsAt: finiteOrNull(parsedReset),
+                };
+            })),
+    };
 }
 
 /**
@@ -507,7 +565,11 @@ export function renderView(state, prefs, now, i18n = IDENTITY_I18N) {
     const _ = i18n.gettext;
     const {snapshot, policies, error, inFlight} = state;
     const ompAccounts = snapshot?.accounts ?? [];
-    const accounts = [...ompAccounts, ...openRouterAccounts(state.openRouter, i18n)].sort(compareAccounts);
+    const accounts = [
+        ...ompAccounts,
+        ...openRouterAccounts(state.openRouter, i18n),
+        ...antigravityAccounts(state.antigravity, i18n),
+    ].sort(compareAccounts);
     const groups = groupsOf(accounts, policies);
     const primary = primaryOf(groups.flatMap(g => g.members.map(m => m.account)), prefs.primaryAccount);
 
@@ -562,6 +624,21 @@ function openRouterAccounts(openRouter, i18n) {
         openRouter.historyError === null ? null : describeOpenRouterError(openRouter.historyError, 'activity', i18n),
     ].filter(problem => problem !== null);
     return [{...account, problem: problems.length ? problems.join(' · ') : null, history: openRouter.history}];
+}
+
+/**
+ * @param {AntigravityState|undefined} antigravity
+ * @param {I18n} i18n
+ * @returns {Account[]}
+ */
+function antigravityAccounts(antigravity, i18n) {
+    if (!antigravity || (antigravity.account === null && antigravity.error === null))
+        return [];
+    const account = antigravity.account ?? {
+        key: 'antigravity-cli:1', provider: 'antigravity-cli', ordinal: 1, accountId: null, orgId: null,
+        org: null, plan: null, email: null, resetCredits: 0, windows: [],
+    };
+    return [{...account, problem: antigravity.error === null ? null : describeAgyError(antigravity.error, i18n)}];
 }
 
 /**
@@ -872,6 +949,25 @@ function describeOpenRouterError(error, request, i18n) {
         return activity
             ? fmt(_('OpenRouter returned unexpected activity data (%s)'), error.detail)
             : fmt(_('OpenRouter returned unexpected data (%s)'), error.detail);
+    }
+}
+
+/**
+ * @param {AgyError} error
+ * @param {I18n} i18n
+ * @returns {string}
+ */
+function describeAgyError(error, i18n) {
+    const _ = i18n.gettext;
+    switch (error.kind) {
+    case 'spawn':
+        return fmt(_('Could not run agy: %s'), error.detail);
+    case 'exit':
+        return error.stderrHead
+            ? fmt(_('agy usage failed (exit %s): %s'), error.status, error.stderrHead)
+            : fmt(_('agy usage failed (exit %s)'), error.status);
+    default:
+        return fmt(_('agy printed something that is not usage JSON (%s)'), error.detail);
     }
 }
 

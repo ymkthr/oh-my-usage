@@ -42,6 +42,24 @@ final class ModelScriptTests: XCTestCase {
         XCTAssertEqual(view.alerts.map(\.level), [.error, .warning])
     }
 
+    func testAntigravityFixtureRendersProviderAndRows() throws {
+        let model = try loadModel()
+        var state = try fixtureState(model)
+        state.antigravity = AntigravityState(
+            account: try model.parseAgyUsage(fixture("agy-usage.json")),
+            error: nil)
+        let provider = model.render(state, primaryAccount: "", now: fixtureNow).providers.first { $0.provider == "antigravity-cli" }
+
+        XCTAssertEqual(provider?.title, "Antigravity")
+        XCTAssertEqual(provider?.accounts.first?.rows.count, 4)
+        XCTAssertEqual(provider?.accounts.first?.rows.map(\.label), [
+            "Gemini Models · Weekly",
+            "Gemini Models · 5 Hour",
+            "Claude and GPT models · Weekly",
+            "Claude and GPT models · 5 Hour",
+        ])
+    }
+
     func testPrimaryAccountMovesThePanel() throws {
         let model = try loadModel()
         let view = model.render(try fixtureState(model), primaryAccount: "openai-codex:personal@example.com", now: fixtureNow)

@@ -9,9 +9,12 @@ import {UsageStore, defaultOmpPath} from '../src/store.js';
 
 const here = GLib.path_get_dirname(Gio.File.new_for_uri(import.meta.url).get_path());
 const FAKE_OMP = `${here}/fixtures/fake-omp`;
-const SELF_PID = Gio.Credentials.new().get_unix_pid();
+const FAKE_AGY_DIR = `${here}/fixtures`;
+const [, selfPidBytes] = GLib.spawn_sync(null, ['/bin/sh', '-c', 'printf "%s" "$PPID"'], null, GLib.SpawnFlags.NONE, null);
+const SELF_PID = Number(new TextDecoder().decode(selfPidBytes));
 const POLICIES = 'config get auth.accountPolicies --json';
 const NO_OPENROUTER = {account: null, error: null, history: null, historyError: null};
+const NO_ANTIGRAVITY = {account: null, error: null};
 
 // GLib.get_home_dir() caches HOME on its first call, so HOME is replaced
 // before anything reads it.
@@ -24,10 +27,11 @@ GLib.unsetenv('OPENROUTER_API_KEY');
 GLib.unsetenv('OPENROUTER_MANAGEMENT_KEY');
 const FAKE_SHELL = `${HOME}/fake-shell`;
 GLib.file_set_contents(FAKE_SHELL, `#!/bin/sh
-echo "$@" >> "$FAKE_SHELL_LOG"
+printf '%s\\n' "$*" >> "$FAKE_SHELL_LOG"
 echo 'Welcome to fake-shell'
 OPENROUTER_API_KEY="$FAKE_OPENROUTER_KEY"
 OPENROUTER_MANAGEMENT_KEY="$FAKE_OPENROUTER_MANAGEMENT_KEY"
+PATH="\${FAKE_LOGIN_PATH:+$FAKE_LOGIN_PATH:}$PATH"
 eval "$4"
 `);
 GLib.chmod(FAKE_SHELL, 0o755);
@@ -116,9 +120,16 @@ function fakeOmp(mode = 'ok') {
     const logPath = `${HOME}/fake-omp-${++logCounter}.log`;
     GLib.setenv('FAKE_OMP_LOG', logPath, true);
     GLib.setenv('FAKE_OMP_MODE', mode, true);
+    GLib.unsetenv('FAKE_LOGIN_PATH');
+    GLib.unsetenv('FAKE_AGY_MODE');
     return {
         lines: () => (readFile(logPath) ?? '').split('\n').filter(line => line.length > 0),
     };
+}
+
+function fakeAgy(mode = 'ok') {
+    GLib.setenv('FAKE_LOGIN_PATH', FAKE_AGY_DIR, true);
+    GLib.setenv('FAKE_AGY_MODE', mode, true);
 }
 
 /** @returns {{lines: () => string[]}} */
@@ -157,21 +168,12 @@ function fakeOpenRouter() {
 
 /** @returns {number[]} */
 function fakeOmpChildren() {
-    const dir = GLib.Dir.open('/proc', 0);
-    const pids = [];
-    for (let name = dir.read_name(); name !== null; name = dir.read_name()) {
-        if (!/^\d+$/.test(name))
-            continue;
-        const stat = readFile(`/proc/${name}/stat`);
-        const cmdline = readFile(`/proc/${name}/cmdline`);
-        if (stat === null || cmdline === null)
-            continue;
-        const ppid = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1]);
-        if (ppid === SELF_PID && cmdline.includes('fake-omp'))
-            pids.push(Number(name));
-    }
-    dir.close();
-    return pids;
+    const [, bytes] = GLib.spawn_sync(
+        null, ['ps', '-A', '-o', 'pid=', '-o', 'ppid=', '-o', 'args='], null, GLib.SpawnFlags.SEARCH_PATH, null);
+    return new TextDecoder().decode(bytes).split('\n').flatMap(line => {
+        const match = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line);
+        return match && Number(match[2]) === SELF_PID && match[3].includes('fake-omp') ? [Number(match[1])] : [];
+    });
 }
 
 /** @param {string} path */
@@ -194,7 +196,7 @@ const cases = {
         const states = [];
         store.connect('changed', () => states.push(store.state.inFlight));
         eq('read: state before the first refresh', store.state,
-            {snapshot: null, policies: [], error: null, inFlight: false, openRouter: NO_OPENROUTER});
+            {snapshot: null, policies: [], error: null, inFlight: false, openRouter: NO_OPENROUTER, antigravity: NO_ANTIGRAVITY});
         store.refresh('read');
         await settled(store);
         eq('read: changed fired for in-flight then idle', states, [true, false]);
@@ -205,6 +207,36 @@ const cases = {
             {provider: 'openai-codex', selector: {email: 'work@example.com'}, priority: 10},
             {provider: 'openai-codex', selector: {email: 'personal@example.com'}, priority: 1},
         ]);
+        store.destroy();
+    },
+
+    async 'agy on the login shell path becomes an Antigravity account'() {
+        fakeOmp();
+        fakeAgy();
+        const store = new UsageStore({ompPath: FAKE_OMP, intervalSeconds: 0});
+        store.refresh('read');
+        await settled(store);
+        eq('agy: account is discovered from the login PATH',
+            [store.state.antigravity.account?.provider, store.state.antigravity.account?.windows.length],
+            ['antigravity-cli', 4]);
+        store.destroy();
+    },
+
+    async 'agy failure keeps its account and does not touch omp state'() {
+        fakeOmp();
+        fakeAgy();
+        const store = new UsageStore({ompPath: FAKE_OMP, intervalSeconds: 0});
+        store.refresh('read');
+        await settled(store);
+        const account = store.state.antigravity.account;
+        const snapshot = store.state.snapshot;
+        GLib.setenv('FAKE_AGY_MODE', 'fail', true);
+        store.refresh('read');
+        await settled(store);
+        eq('agy: failed refresh keeps previous account and reports stderr',
+            [store.state.antigravity.account === account, store.state.antigravity.error],
+            [true, {kind: 'exit', status: 1, stderrHead: 'fake-agy: unavailable'}]);
+        eq('agy: omp state remains successful', [store.state.snapshot !== snapshot, store.state.error], [true, null]);
         store.destroy();
     },
 
@@ -327,7 +359,7 @@ const cases = {
         await sleep(300);
         eq('destroy: no changed after destroy', changes, 1);
         eq('destroy: state settles without publishing', store.state,
-            {snapshot: null, policies: [], error: null, inFlight: false, openRouter: NO_OPENROUTER});
+            {snapshot: null, policies: [], error: null, inFlight: false, openRouter: NO_OPENROUTER, antigravity: NO_ANTIGRAVITY});
         eq('destroy: refresh after destroy spawned nothing', fake.lines(), ['usage --json']);
         store.destroy();
         eq('destroy: idempotent', fakeOmpChildren(), []);
@@ -344,13 +376,13 @@ const cases = {
         await settled(store);
         eq('no key: OpenRouter state is empty', store.state.openRouter, NO_OPENROUTER);
         eq('no key: the login shell was asked with -l -i -c', shell.lines().map(line => line.split(' ').slice(0, 3)),
-            [['-l', '-i', '-c']]);
+            [['-l', '-i', '-c'], ['-l', '-i', '-c']]);
         eq('no key: OpenRouter was not called', server.auth(), []);
         eq('no key: omp is unaffected', store.state.snapshot?.accounts.length, 4);
 
         store.refresh('read');
         await settled(store);
-        eq('no key: each refresh asks again, so a key set later is picked up', shell.lines().length, 2);
+        eq('no key: each refresh asks again, so a key set later is picked up', shell.lines().length, 3);
         store.destroy();
         server.stop();
     },
@@ -373,7 +405,7 @@ const cases = {
 
         store.refresh('read');
         await settled(store);
-        eq('key: the shell ran once and OpenRouter twice', [shell.lines().length, server.auth().length], [1, 2]);
+        eq('key: the shell ran once and OpenRouter twice', [shell.lines().length, server.auth().length], [2, 2]);
         store.destroy();
         server.stop();
     },
@@ -393,7 +425,7 @@ const cases = {
         await settled(store);
         eq('failure: HTTP 500 is reported and the account kept',
             [store.state.openRouter.error, store.state.openRouter.account === good], [{kind: 'http', status: 500}, true]);
-        eq('failure: a server error keeps the key', shell.lines().length, 1);
+        eq('failure: a server error keeps the key', shell.lines().length, 2);
 
         server.reply.status = 401;
         store.refresh('read');
@@ -401,7 +433,7 @@ const cases = {
         eq('failure: HTTP 401 is reported', store.state.openRouter.error, {kind: 'http', status: 401});
         store.refresh('read');
         await settled(store);
-        eq('failure: after a 401 the shell is asked again', shell.lines().length, 2);
+        eq('failure: after a 401 the shell is asked again', shell.lines().length, 3);
 
         server.reply.status = 200;
         server.reply.body = '<html>maintenance</html>';
@@ -439,7 +471,7 @@ const cases = {
         eq('history: a failure keeps the last history and the account', [
             store.state.openRouter.historyError, store.state.openRouter.history === good, store.state.openRouter.error,
         ], [{kind: 'http', status: 500}, true, null]);
-        eq('history: a server error keeps both keys', shell.lines().length, 1);
+        eq('history: a server error keeps both keys', shell.lines().length, 2);
 
         server.activityReply.status = 403;
         store.refresh('read');
@@ -449,7 +481,7 @@ const cases = {
         store.refresh('read');
         await settled(store);
         eq('history: after a 403 the shell is asked again and the retry succeeds',
-            [shell.lines().length, store.state.openRouter.historyError], [2, null]);
+            [shell.lines().length, store.state.openRouter.historyError], [3, null]);
         store.destroy();
         server.stop();
     },
@@ -463,8 +495,8 @@ const cases = {
         const store = new UsageStore({ompPath: FAKE_OMP, intervalSeconds: 0, openRouterBase: server.base});
         store.refresh('read');
         await settled(store);
-        eq('env: both keys came from the environment', [server.auth(), server.activityAuth(), shell.lines()],
-            [['Bearer sk-or-env'], ['Bearer sk-or-env-mgmt'], []]);
+        eq('env: both keys came from the environment', [server.auth(), server.activityAuth(), shell.lines().length],
+            [['Bearer sk-or-env'], ['Bearer sk-or-env-mgmt'], 1]);
 
         GLib.unsetenv('OPENROUTER_MANAGEMENT_KEY');
         GLib.setenv('FAKE_OPENROUTER_MANAGEMENT_KEY', 'sk-or-shell-mgmt', true);
@@ -476,7 +508,7 @@ const cases = {
         await settled(store);
         eq('env: a missing management key is asked from the shell while the API key stays from the environment',
             [shell.lines().length, server.auth().at(-1), server.activityAuth().at(-1)],
-            [1, 'Bearer sk-or-env', 'Bearer sk-or-shell-mgmt']);
+            [2, 'Bearer sk-or-env', 'Bearer sk-or-shell-mgmt']);
         GLib.unsetenv('OPENROUTER_API_KEY');
         store.destroy();
         server.stop();

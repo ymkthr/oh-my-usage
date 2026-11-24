@@ -37,6 +37,36 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertEqual(view.providers[1].accounts.map(\.subtitle), ["team · priority 10", "plus · priority 1"])
     }
 
+    func testAgyOnLoginPathAddsProvider() async throws {
+        _ = FakeOmp()
+        _ = FakeAgy()
+        let store = makeStore()
+        store.refresh(.read)
+        try await settled(store)
+        XCTAssertNotNil(store.state.antigravity.account, "\(store.state.antigravity.error as Any)")
+        XCTAssertNil(store.state.antigravity.error)
+        XCTAssertTrue(render(store).providers.contains { $0.title == "Antigravity" })
+    }
+
+    func testAgyFailureKeepsPreviousAccountAndOmpState() async throws {
+        _ = FakeOmp()
+        _ = FakeAgy()
+        let store = makeStore()
+        store.refresh(.read)
+        try await settled(store)
+        let account = try XCTUnwrap(store.state.antigravity.account)
+        let snapshot = try XCTUnwrap(store.state.snapshot)
+
+        setenv("FAKE_AGY_MODE", "fail", 1)
+        store.refresh(.read)
+        try await settled(store)
+
+        XCTAssertTrue(store.state.antigravity.account === account)
+        XCTAssertEqual(store.state.antigravity.error, .exit(status: 1, stderrHead: "fake-agy: unavailable"))
+        XCTAssertFalse(store.state.snapshot === snapshot)
+        XCTAssertNil(store.state.error)
+    }
+
     func testRequestsDuringARefreshMergeIntoOneFollowUp() async throws {
         let fake = FakeOmp()
         let store = makeStore()
