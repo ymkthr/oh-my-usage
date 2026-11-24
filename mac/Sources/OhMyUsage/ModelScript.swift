@@ -83,12 +83,39 @@ enum FetchError: Error, Equatable {
     }
 }
 
-/// `snapshot` and `policies` stay JS values from model.js; only renderView reads them.
+enum AgyError: Error, Equatable {
+    case spawn(path: String, detail: String)
+    case exit(status: Int32, stderrHead: String)
+    case invalidJSON(detail: String)
+
+    fileprivate var jsObject: [String: Any] {
+        switch self {
+        case .spawn(let path, let detail):
+            ["kind": "spawn", "path": path, "detail": detail]
+        case .exit(let status, let stderrHead):
+            ["kind": "exit", "status": status, "stderrHead": stderrHead]
+        case .invalidJSON(let detail):
+            ["kind": "invalid-json", "detail": detail]
+        }
+    }
+}
+
+struct AntigravityState {
+    var account: JSValue?
+    var error: AgyError?
+
+    var jsObject: [String: Any] {
+        ["account": account ?? NSNull(), "error": error?.jsObject ?? NSNull()]
+    }
+}
+
+/// `snapshot`, `policies` and `antigravity` stay JS values from model.js; only renderView reads them.
 struct StoreState {
     var snapshot: JSValue?
     var policies: JSValue
     var error: FetchError?
     var inFlight: Bool
+    var antigravity: AntigravityState = AntigravityState(account: nil, error: nil)
 }
 
 /// src/model.js running in one JSContext, so formatting, ordering, levels
@@ -101,7 +128,9 @@ final class ModelScript {
 
     private let context: JSContext
     private let parseUsageFunction: JSValue
+    private let parseAgyUsageFunction: JSValue
     private let parsePoliciesFunction: JSValue
+    private let latestAgyVersionFunction: JSValue
     private let renderFunction: JSValue
 
     convenience init(contentsOf url: URL) throws {
@@ -113,10 +142,12 @@ final class ModelScript {
         // JSContext evaluates classic scripts, where `export` is a syntax error.
         context.evaluateScript(source.replacingOccurrences(of: #"(?m)^export "#, with: "", options: .regularExpression))
         parseUsageFunction = context.objectForKeyedSubscript("parseUsage")
+        parseAgyUsageFunction = context.objectForKeyedSubscript("parseAgyUsage")
         parsePoliciesFunction = context.objectForKeyedSubscript("parsePolicies")
+        latestAgyVersionFunction = context.objectForKeyedSubscript("latestAgyVersion")
         renderFunction = context.evaluateScript("""
-            (snapshot, policies, error, inFlight, primaryAccount, now) =>
-                JSON.stringify(renderView({snapshot, policies, error, inFlight}, {primaryAccount}, now))
+            (snapshot, policies, error, inFlight, antigravity, primaryAccount, now) =>
+                JSON.stringify(renderView({snapshot, policies, error, inFlight, antigravity}, {primaryAccount}, now))
             """)
     }
 
@@ -132,8 +163,21 @@ final class ModelScript {
         }
     }
 
+    func parseAgyUsage(_ stdout: String, log: String) throws(AgyError) -> JSValue {
+        do {
+            return try call(parseAgyUsageFunction, [stdout, log])
+        } catch {
+            throw .invalidJSON(detail: error.message)
+        }
+    }
+
     func parsePolicies(_ stdout: String) -> JSValue? {
         try? call(parsePoliciesFunction, [stdout])
+    }
+
+    func latestAgyVersion(_ names: [String]) -> String? {
+        guard let result = try? call(latestAgyVersionFunction, [names]), result.isString else { return nil }
+        return result.toString()
     }
 
     func render(_ state: StoreState, primaryAccount: String, now: Date) -> View {
@@ -142,6 +186,7 @@ final class ModelScript {
             state.policies,
             state.error?.jsObject ?? NSNull(),
             state.inFlight,
+            state.antigravity.jsObject,
             primaryAccount,
             (now.timeIntervalSince1970 * 1000).rounded(),
         ]

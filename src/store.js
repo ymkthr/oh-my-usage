@@ -4,7 +4,8 @@ import GObject from 'gi://GObject';
 import Soup from 'gi://Soup?version=3.0';
 
 import {
-    OPENROUTER_KEY_SCRIPT, parseOpenRouterActivity, parseOpenRouterKey, parsePolicies, parseShellKeys, parseUsage,
+    LOGIN_PATH_SCRIPT, OPENROUTER_KEY_SCRIPT, latestAgyVersion, parseAgyUsage, parseOpenRouterActivity, parseOpenRouterKey,
+    parsePolicies, parseShellKeys, parseUsage,
 } from './model.js';
 
 Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async');
@@ -26,6 +27,7 @@ Gio._promisify(Soup.Session.prototype, 'send_and_read_async');
 /** @typedef {import('./model.js').OpenRouterState} OpenRouterState */
 /** @typedef {import('./model.js').OpenRouterError} OpenRouterError */
 /** @typedef {import('./model.js').OpenRouterKeys} OpenRouterKeys */
+/** @typedef {import('./model.js').AntigravityState} AntigravityState */
 
 const WATCHDOG_SECONDS = 60;
 
@@ -34,12 +36,20 @@ export const OPENROUTER_API_BASE = 'https://openrouter.ai/api/v1';
 /** @type {OpenRouterState} */
 const NO_OPENROUTER = {account: null, error: null, history: null, historyError: null};
 
+/** @type {AntigravityState} */
+const NO_ANTIGRAVITY = {account: null, error: null};
+
 /**
  * The Shell's PATH does not contain ~/.bun/bin, so find_program_in_path() would miss omp.
  * @returns {string}
  */
 export function defaultOmpPath() {
     return GLib.build_filenamev([GLib.get_home_dir(), '.bun', 'bin', 'omp']);
+}
+
+/** @returns {string} */
+function ompAgyRoot() {
+    return GLib.build_filenamev([GLib.get_home_dir(), '.omp', 'antigravity-cli', 'bin']);
 }
 
 /**
@@ -66,6 +76,10 @@ export class UsageStore extends GObject.Object {
     #error = null;
     /** @type {OpenRouterState} */
     #openRouter = NO_OPENROUTER;
+    /** @type {AntigravityState} */
+    #antigravity = NO_ANTIGRAVITY;
+    /** @type {string|null} */
+    #loginPath = null;
     /**
      * @type {OpenRouterKeys|null}
      */
@@ -104,6 +118,7 @@ export class UsageStore extends GObject.Object {
             error: this.#error,
             inFlight: this.#inFlight,
             openRouter: this.#openRouter,
+            antigravity: this.#antigravity,
         };
     }
 
@@ -177,6 +192,8 @@ export class UsageStore extends GObject.Object {
         await this.#readOmp(request);
         if (!this.#destroyed)
             await this.#readOpenRouter();
+        if (!this.#destroyed)
+            await this.#readAntigravity();
     }
 
     /** @param {Request} request */
@@ -234,6 +251,48 @@ export class UsageStore extends GObject.Object {
         this.#openRouter = {account: key.value ?? this.#openRouter.account, error: key.error, history, historyError};
     }
 
+    async #readAntigravity() {
+        const loginPath = await this.#resolveLoginPath();
+        const path = findExecutable(loginPath, 'agy') ?? latestOmpAgy(ompAgyRoot());
+        if (path === null) {
+            this.#antigravity = NO_ANTIGRAVITY;
+            return;
+        }
+
+        const previous = this.#antigravity.account;
+        // Also keeps every refresh from adding a file to agy's own log directory.
+        const logFile = GLib.build_filenamev([GLib.get_tmp_dir(), `oh-my-usage-agy-${GLib.uuid_string_random()}.log`]);
+        try {
+            // agy treats its cwd as the workspace, so it must not inherit the Shell's.
+            const run = await this.#spawn([path, '-p', '/usage', '--output-format', 'json', '--log-file', logFile],
+                {cwd: GLib.get_tmp_dir(), path: loginPath});
+            if (!run.ok) {
+                this.#antigravity = {
+                    account: previous,
+                    error: {kind: 'exit', status: run.status, stderrHead: firstLine(run.stderr)},
+                };
+                return;
+            }
+            try {
+                this.#antigravity = {account: parseAgyUsage(run.stdout, readText(logFile)), error: null};
+            } catch (e) {
+                this.#antigravity = {account: previous, error: {kind: 'invalid-json', detail: e.message}};
+            }
+        } catch (e) {
+            if (!isCancelled(e)) {
+                const error = classify(e, path);
+                this.#antigravity = {
+                    account: previous,
+                    error: error.kind === 'missing-binary'
+                        ? {kind: 'spawn', path, detail: 'executable disappeared'}
+                        : error,
+                };
+            }
+        } finally {
+            GLib.unlink(logFile);
+        }
+    }
+
     /**
      * @template T
      * @param {string} url
@@ -285,6 +344,20 @@ export class UsageStore extends GObject.Object {
         return {apiKey: env.apiKey ?? shell.apiKey, managementKey: env.managementKey ?? shell.managementKey};
     }
 
+    async #resolveLoginPath() {
+        if (this.#loginPath !== null)
+            return this.#loginPath;
+        let path = GLib.getenv('PATH') || '';
+        try {
+            const run = await this.#spawn(
+                [GLib.getenv('SHELL') || '/bin/sh', '-l', '-i', '-c', LOGIN_PATH_SCRIPT]);
+            path = markedValue(run.stdout) ?? path;
+        } catch {
+        }
+        this.#loginPath = path;
+        return path;
+    }
+
     /**
      * Priorities only order the accounts, so an omp that cannot answer the
      * config read keeps the last policies instead of failing the refresh.
@@ -301,14 +374,21 @@ export class UsageStore extends GObject.Object {
 
     /**
      * @param {string[]} argv
+     * @param {{cwd?: string, path?: string}} [options]
      * @returns {Promise<{ok: boolean, status: number, stdout: string, stderr: string}>}
      * @throws {GLib.Error} SpawnError (NOENT for a missing binary) or IOErrorEnum.CANCELLED
      */
-    async #spawn(argv) {
+    async #spawn(argv, options = {}) {
         this.#cancellable.set_error_if_cancelled();
 
-        const proc = Gio.Subprocess.new(argv,
-            Gio.SubprocessFlags.STDIN_PIPE | Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE);
+        const launcher = new Gio.SubprocessLauncher({
+            flags: Gio.SubprocessFlags.STDIN_PIPE | Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE,
+        });
+        if (options.cwd)
+            launcher.set_cwd(options.cwd);
+        if (options.path)
+            launcher.setenv('PATH', options.path, true);
+        const proc = launcher.spawnv(argv);
         this.#proc = proc;
 
         let watchdogId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, WATCHDOG_SECONDS, () => {
@@ -365,4 +445,45 @@ function classify(e, path) {
  */
 function firstLine(stderr) {
     return stderr.split('\n').map(line => line.trim()).find(line => line.length > 0) ?? '';
+}
+
+/** @param {string} stdout @returns {string|null} */
+function markedValue(stdout) {
+    const parts = stdout.split('__OMU__');
+    return parts.length >= 3 && parts[1].length > 0 ? parts[1] : null;
+}
+
+/** @param {string} path @param {string} name @returns {string|null} */
+function findExecutable(path, name) {
+    return path.split(':')
+        .filter(directory => directory.length > 0)
+        .map(directory => GLib.build_filenamev([directory, name]))
+        .find(candidate => GLib.file_test(candidate, GLib.FileTest.IS_EXECUTABLE)) ?? null;
+}
+
+/** @param {string} path @returns {string}  '' when the file is missing */
+function readText(path) {
+    try {
+        return new TextDecoder().decode(GLib.file_get_contents(path)[1]);
+    } catch {
+        return '';
+    }
+}
+
+/** @param {string} root @returns {string|null} */
+function latestOmpAgy(root) {
+    let dir;
+    try {
+        dir = GLib.Dir.open(root, 0);
+    } catch {
+        return null;
+    }
+    const versions = [];
+    for (let name = dir.read_name(); name !== null; name = dir.read_name()) {
+        if (GLib.file_test(GLib.build_filenamev([root, name, 'agy']), GLib.FileTest.IS_EXECUTABLE))
+            versions.push(name);
+    }
+    dir.close();
+    const version = latestAgyVersion(versions);
+    return version === null ? null : GLib.build_filenamev([root, version, 'agy']);
 }

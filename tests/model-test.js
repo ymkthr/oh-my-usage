@@ -5,7 +5,7 @@ import Gio from 'gi://Gio';
 import System from 'system';
 
 import {
-    parseUsage, parsePolicies, renderView, levelOf, formatRemaining, formatAge, fmt,
+    latestAgyVersion, parseAgyUsage, parseUsage, parsePolicies, renderView, levelOf, formatRemaining, formatAge, fmt,
     primaryOf, panelWindowsOf, accountTitle, IDENTITY_I18N, parseShellKeys, parseOpenRouterKey, parseOpenRouterActivity,
 } from '../src/model.js';
 
@@ -39,6 +39,8 @@ function throws(name, f, re) {
 const here = GLib.path_get_dirname(Gio.File.new_for_uri(import.meta.url).get_path());
 const [, bytes] = Gio.File.new_for_path(`${here}/fixtures/usage.json`).load_contents(null);
 const fixtureText = new TextDecoder().decode(bytes);
+const [, agyBytes] = Gio.File.new_for_path(`${here}/fixtures/agy-usage.json`).load_contents(null);
+const agyFixtureText = new TextDecoder().decode(agyBytes);
 
 const snapshot = parseUsage(fixtureText);
 const [anthropic, codexPlus, codexTeam, opencodeGo] = snapshot.accounts;
@@ -72,6 +74,35 @@ eq('parse: accountId and orgId come from metadata',
         [null, null],
     ]);
 eq('parse: reset credits counted', snapshot.accounts.map(a => a.resetCredits), [1, 2, 1, 0]);
+const agyLog = 'I1124 18:32:31.986769 1 server_oauth.go:226] OAuth: authenticated successfully as agy@example.com\n';
+const agyAccount = parseAgyUsage(agyFixtureText, agyLog);
+eq('agy parse: account identity comes from the log',
+    [agyAccount.key, agyAccount.provider, agyAccount.ordinal, agyAccount.email],
+    ['antigravity-cli:1', 'antigravity-cli', 1, 'agy@example.com']);
+eq('agy parse: a log without the sign-in line leaves the email unknown',
+    parseAgyUsage(agyFixtureText, '').email, null);
+eq('agy parse: labels name the model group and the window, kinds and fractions',
+    agyAccount.windows.map(w => [w.id, w.kind, w.label, w.usedFraction]),
+    [
+        ['gemini-weekly', '7d', 'Gemini · 7d', 1 - 0.931438148021698],
+        ['gemini-5h', '5h', 'Gemini · 5h', 1 - 0.7457525730133057],
+        ['3p-weekly', '7d', 'Claude/GPT · 7d', 0],
+        ['3p-5h', '5h', 'Claude/GPT · 5h', 0],
+    ]);
+eq('agy parse: reset timestamps are milliseconds',
+    agyAccount.windows.map(w => w.resetsAt),
+    [Date.parse('2026-12-01T04:29:01Z'), Date.parse('2026-11-24T09:29:01Z'),
+        Date.parse('2026-12-01T07:02:37Z'), Date.parse('2026-11-24T12:02:37Z')]);
+eq('agy parse: disabled buckets are skipped',
+    parseAgyUsage(JSON.stringify({command: {data: {groups: [{name: 'x', buckets: [
+        {id: 'on', window: '5h', name: 'On', remaining_fraction: 1},
+        {id: 'off', window: 'weekly', name: 'Off', disabled: true},
+    ]}]}}}), '').windows.map(w => w.id), ['on']);
+throws('agy parse: malformed JSON is rejected', () => parseAgyUsage('{', ''), /not JSON/);
+throws('agy parse: missing groups is rejected', () => parseAgyUsage('{}', ''), /no command.data.groups array/);
+eq('agy version: the numerically highest version wins and non-version names are ignored',
+    latestAgyVersion(['1.5.9', '1.10.0', '1.5.13', 'install.json']), '1.10.0');
+eq('agy version: nothing installed', latestAgyVersion([]), null);
 
 throws('parse: empty stdout (omp failure mode) is rejected', () => parseUsage(''), /empty stdout/);
 throws('parse: whitespace-only stdout is rejected', () => parseUsage(' \n'), /empty stdout/);
@@ -199,6 +230,18 @@ eq('view: fable row detail is percent · remaining', accountsOf(v)[0].rows[2].de
 eq('view: fable row fraction and level', [accountsOf(v)[0].rows[2].fraction, accountsOf(v)[0].rows[2].level], [0.12, 'normal']);
 eq('view: 84% row is a warning', [accountsOf(v)[1].rows[1].detail, accountsOf(v)[1].rows[1].level], ['84% · 6d9h', 'warning']);
 eq('view: 93% row is an error', [accountsOf(v)[3].rows[2].detail, accountsOf(v)[3].rows[2].level], ['93% · 6d5h', 'error']);
+const agyView = renderView({...fresh, antigravity: {account: agyAccount, error: null}}, {primaryAccount: ''}, now);
+const agyProvider = agyView.providers.find(provider => provider.provider === 'antigravity-cli');
+eq('agy view: the section is titled by the signed-in account and lists all quota rows',
+    [agyProvider?.title, agyProvider?.accounts[0].title, agyProvider?.accounts[0].rows.map(row => row.label)],
+    ['Antigravity', 'agy@example.com', ['Gemini · 7d', 'Gemini · 5h', 'Claude/GPT · 7d', 'Claude/GPT · 5h']]);
+const agyErrorView = renderView({
+    ...fresh, antigravity: {account: agyAccount, error: {kind: 'exit', status: 1, stderrHead: 'unavailable'}},
+}, {primaryAccount: ''}, now);
+const agyErrorProvider = agyErrorView.providers.find(provider => provider.provider === 'antigravity-cli');
+eq('agy view: a failed refresh keeps rows and shows the problem',
+    [agyErrorProvider?.accounts[0].rows.length, agyErrorProvider?.accounts[0].subtitle],
+    [4, 'agy usage failed (exit 1): unavailable']);
 
 const goMonthlyAlert = {key: 'opencode-go:1', title: 'OpenCode Go', label: 'Monthly', detail: '93% · 6d5h', level: 'error'};
 const codexWeeklyAlert = {

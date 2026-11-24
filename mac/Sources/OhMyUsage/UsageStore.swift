@@ -5,6 +5,10 @@ func defaultOmpPath() -> String {
     URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".bun/bin/omp").path
 }
 
+func defaultOmpAgyRoot() -> String {
+    URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".omp/antigravity-cli/bin").path
+}
+
 /// The markers keep rc-file greetings around the value out of it.
 private let loginPathScript = #"printf "\n__OMU__%s__OMU__\n" "$PATH""#
 
@@ -38,6 +42,7 @@ final class UsageStore {
 
     private let script: ModelScript
     private let watchdogSeconds: TimeInterval
+    private let ompAgyRoot: String
     private var ompPath = defaultOmpPath()
     private var intervalSeconds = 0
     private var queued: Request?
@@ -48,10 +53,13 @@ final class UsageStore {
     /// GUI PATH, so children run under the login shell's PATH, read once.
     private var childPath: String?
 
-    init(script: ModelScript, ompPath: String, intervalSeconds: Int, watchdogSeconds: TimeInterval = 60) {
+    init(script: ModelScript, ompPath: String, intervalSeconds: Int, watchdogSeconds: TimeInterval = 60,
+        ompAgyRoot: String = defaultOmpAgyRoot()) {
         self.script = script
         self.watchdogSeconds = watchdogSeconds
-        state = StoreState(snapshot: nil, policies: script.emptyPolicies(), error: nil, inFlight: false)
+        self.ompAgyRoot = ompAgyRoot
+        state = StoreState(snapshot: nil, policies: script.emptyPolicies(), error: nil, inFlight: false,
+            antigravity: AntigravityState(account: nil, error: nil))
         configure(ompPath: ompPath, intervalSeconds: intervalSeconds)
     }
 
@@ -110,29 +118,82 @@ final class UsageStore {
 
     private func runOnce(_ request: Request) async {
         let path = ompPath
-        guard FileManager.default.isExecutableFile(atPath: path) else {
+        let environment = await childEnvironment()
+        if FileManager.default.isExecutableFile(atPath: path) {
+            do {
+                if request == .invalidate {
+                    _ = try await spawn(path, ["usage", "invalidate"], environment: environment)
+                }
+                let run = try await spawn(path, ["usage", "--json"], environment: environment)
+                if run.status == 0 {
+                    state.snapshot = try script.parseUsage(run.stdout)
+                    state.error = nil
+                    await readPolicies(path, environment: environment)
+                } else {
+                    state.error = .exit(status: run.status, stderrHead: firstLine(run.stderr))
+                }
+            } catch let error as FetchError {
+                state.error = error
+            } catch {
+                // Only Cancelled lands here, and destroy() leaves the state untouched.
+            }
+        } else {
             state.error = .missingBinary(path: path)
+        }
+        if !destroyed {
+            await readAntigravity(environment: environment)
+        }
+    }
+
+    private func readAntigravity(environment: [String: String]) async {
+        guard let path = findExecutable("agy", in: environment["PATH"] ?? "") ?? latestOmpAgy() else {
+            state.antigravity = AntigravityState(account: nil, error: nil)
             return
         }
 
-        let environment = await childEnvironment()
+        let previous = state.antigravity.account
+        // Also keeps every refresh from adding a file to agy's own log directory.
+        let logFile = FileManager.default.temporaryDirectory.appendingPathComponent("oh-my-usage-agy-\(UUID().uuidString).log")
+        defer { try? FileManager.default.removeItem(at: logFile) }
         do {
-            if request == .invalidate {
-                _ = try await spawn(path, ["usage", "invalidate"], environment: environment)
-            }
-            let run = try await spawn(path, ["usage", "--json"], environment: environment)
+            // agy treats its cwd as the workspace, and a GUI app's cwd is /.
+            let run = try await spawn(
+                path,
+                ["-p", "/usage", "--output-format", "json", "--log-file", logFile.path],
+                environment: environment,
+                currentDirectoryURL: FileManager.default.temporaryDirectory)
             guard run.status == 0 else {
-                state.error = .exit(status: run.status, stderrHead: firstLine(run.stderr))
+                state.antigravity = AntigravityState(
+                    account: previous,
+                    error: .exit(status: run.status, stderrHead: firstLine(run.stderr)))
                 return
             }
-            state.snapshot = try script.parseUsage(run.stdout)
-            state.error = nil
-            await readPolicies(path, environment: environment)
+            do {
+                let log = (try? String(contentsOf: logFile, encoding: .utf8)) ?? ""
+                state.antigravity = AntigravityState(account: try script.parseAgyUsage(run.stdout, log: log), error: nil)
+            } catch {
+                state.antigravity = AntigravityState(account: previous, error: error)
+            }
         } catch let error as FetchError {
-            state.error = error
+            let agyError: AgyError
+            switch error {
+            case .missingBinary(let path):
+                agyError = .spawn(path: path, detail: "executable disappeared")
+            case .spawn(let path, let detail):
+                agyError = .spawn(path: path, detail: detail)
+            case .exit, .invalidJSON:
+                agyError = .spawn(path: path, detail: "could not start process")
+            }
+            state.antigravity = AntigravityState(account: previous, error: agyError)
         } catch {
-            // Only Cancelled lands here, and destroy() leaves the state untouched.
+            // Destroy leaves the last published state untouched.
         }
+    }
+
+    private func latestOmpAgy() -> String? {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: ompAgyRoot)) ?? []
+        let installed = names.filter { FileManager.default.isExecutableFile(atPath: "\(ompAgyRoot)/\($0)/agy") }
+        return script.latestAgyVersion(installed).map { "\(ompAgyRoot)/\($0)/agy" }
     }
 
     /// Priorities only order the accounts, so an omp that cannot answer the
@@ -157,13 +218,18 @@ final class UsageStore {
         return environment
     }
 
-    private func spawn(_ path: String, _ arguments: [String], environment: [String: String]) async throws -> Completed {
+    private func spawn(
+        _ path: String,
+        _ arguments: [String],
+        environment: [String: String],
+        currentDirectoryURL: URL? = nil) async throws -> Completed {
         guard !destroyed else { throw Cancelled() }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: path)
         process.arguments = arguments
         process.environment = environment
+        process.currentDirectoryURL = currentDirectoryURL
         process.standardInput = FileHandle.nullDevice
         let stdout = Pipe()
         let stderr = Pipe()
@@ -231,4 +297,10 @@ private func firstLine(_ text: String) -> String {
         .lazy
         .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         .first { !$0.isEmpty } ?? ""
+}
+
+private func findExecutable(_ name: String, in path: String) -> String? {
+    path.split(separator: ":")
+        .map { URL(fileURLWithPath: String($0)).appendingPathComponent(name).path }
+        .first { FileManager.default.isExecutableFile(atPath: $0) }
 }
