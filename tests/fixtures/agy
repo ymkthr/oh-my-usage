@@ -1,4 +1,10 @@
 #!/bin/sh
+for arg; do
+    if [ "$previous" = --log-file ]; then
+        printf '%s\n' 'I1124 18:32:31.986769 1 server_oauth.go:226] OAuth: authenticated successfully as agy@example.com' > "$arg"
+    fi
+    previous=$arg
+done
 if [ "${FAKE_AGY_MODE:-ok}" = fail ]; then
     printf '%s\n' 'fake-agy: unavailable' >&2
     exit 1

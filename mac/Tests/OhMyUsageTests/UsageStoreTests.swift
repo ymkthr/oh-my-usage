@@ -45,7 +45,8 @@ final class UsageStoreTests: XCTestCase {
         try await settled(store)
         XCTAssertNotNil(store.state.antigravity.account, "\(store.state.antigravity.error as Any)")
         XCTAssertNil(store.state.antigravity.error)
-        XCTAssertTrue(render(store).providers.contains { $0.title == "Antigravity" })
+        let section = render(store).providers.first { $0.title == "Antigravity" }?.accounts.first
+        XCTAssertEqual(section?.title, "agy@example.com")
     }
 
     func testAgyFailureKeepsPreviousAccountAndOmpState() async throws {

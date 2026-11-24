@@ -74,16 +74,20 @@ eq('parse: accountId and orgId come from metadata',
         [null, null],
     ]);
 eq('parse: reset credits counted', snapshot.accounts.map(a => a.resetCredits), [1, 2, 1, 0]);
-const agyAccount = parseAgyUsage(agyFixtureText);
-eq('agy parse: account identity', [agyAccount.key, agyAccount.provider, agyAccount.ordinal],
-    ['antigravity-cli:1', 'antigravity-cli', 1]);
-eq('agy parse: labels, kinds and fractions',
+const agyLog = 'I1124 18:32:31.986769 1 server_oauth.go:226] OAuth: authenticated successfully as agy@example.com\n';
+const agyAccount = parseAgyUsage(agyFixtureText, agyLog);
+eq('agy parse: account identity comes from the log',
+    [agyAccount.key, agyAccount.provider, agyAccount.ordinal, agyAccount.email],
+    ['antigravity-cli:1', 'antigravity-cli', 1, 'agy@example.com']);
+eq('agy parse: a log without the sign-in line leaves the email unknown',
+    parseAgyUsage(agyFixtureText, '').email, null);
+eq('agy parse: labels name the model group and the window, kinds and fractions',
     agyAccount.windows.map(w => [w.id, w.kind, w.label, w.usedFraction]),
     [
-        ['gemini-weekly', '7d', 'Gemini Models · Weekly', 1 - 0.931438148021698],
-        ['gemini-5h', '5h', 'Gemini Models · 5 Hour', 1 - 0.7457525730133057],
-        ['3p-weekly', '7d', 'Claude and GPT models · Weekly', 0],
-        ['3p-5h', '5h', 'Claude and GPT models · 5 Hour', 0],
+        ['gemini-weekly', '7d', 'Gemini · 7d', 1 - 0.931438148021698],
+        ['gemini-5h', '5h', 'Gemini · 5h', 1 - 0.7457525730133057],
+        ['3p-weekly', '7d', 'Claude/GPT · 7d', 0],
+        ['3p-5h', '5h', 'Claude/GPT · 5h', 0],
     ]);
 eq('agy parse: reset timestamps are milliseconds',
     agyAccount.windows.map(w => w.resetsAt),
@@ -93,9 +97,9 @@ eq('agy parse: disabled buckets are skipped',
     parseAgyUsage(JSON.stringify({command: {data: {groups: [{name: 'x', buckets: [
         {id: 'on', window: '5h', name: 'On', remaining_fraction: 1},
         {id: 'off', window: 'weekly', name: 'Off', disabled: true},
-    ]}]}}})).windows.map(w => w.id), ['on']);
-throws('agy parse: malformed JSON is rejected', () => parseAgyUsage('{'), /not JSON/);
-throws('agy parse: missing groups is rejected', () => parseAgyUsage('{}'), /no command.data.groups array/);
+    ]}]}}}), '').windows.map(w => w.id), ['on']);
+throws('agy parse: malformed JSON is rejected', () => parseAgyUsage('{', ''), /not JSON/);
+throws('agy parse: missing groups is rejected', () => parseAgyUsage('{}', ''), /no command.data.groups array/);
 
 throws('parse: empty stdout (omp failure mode) is rejected', () => parseUsage(''), /empty stdout/);
 throws('parse: whitespace-only stdout is rejected', () => parseUsage(' \n'), /empty stdout/);
@@ -225,10 +229,9 @@ eq('view: 84% row is a warning', [accountsOf(v)[1].rows[1].detail, accountsOf(v)
 eq('view: 93% row is an error', [accountsOf(v)[3].rows[2].detail, accountsOf(v)[3].rows[2].level], ['93% · 6d5h', 'error']);
 const agyView = renderView({...fresh, antigravity: {account: agyAccount, error: null}}, {primaryAccount: ''}, now);
 const agyProvider = agyView.providers.find(provider => provider.provider === 'antigravity-cli');
-eq('agy view: provider is shown with all quota rows',
-    [agyProvider?.title, agyProvider?.accounts[0].rows.map(row => row.label)],
-    ['Antigravity', ['Gemini Models · Weekly', 'Gemini Models · 5 Hour',
-        'Claude and GPT models · Weekly', 'Claude and GPT models · 5 Hour']]);
+eq('agy view: the section is titled by the signed-in account and lists all quota rows',
+    [agyProvider?.title, agyProvider?.accounts[0].title, agyProvider?.accounts[0].rows.map(row => row.label)],
+    ['Antigravity', 'agy@example.com', ['Gemini · 7d', 'Gemini · 5h', 'Claude/GPT · 7d', 'Claude/GPT · 5h']]);
 const agyErrorView = renderView({
     ...fresh, antigravity: {account: agyAccount, error: {kind: 'exit', status: 1, stderrHead: 'unavailable'}},
 }, {primaryAccount: ''}, now);

@@ -161,9 +161,9 @@ final class ModelScript {
         }
     }
 
-    func parseAgyUsage(_ stdout: String) throws(AgyError) -> JSValue {
+    func parseAgyUsage(_ stdout: String, log: String) throws(AgyError) -> JSValue {
         do {
-            return try call(parseAgyUsageFunction, [stdout])
+            return try call(parseAgyUsageFunction, [stdout, log])
         } catch {
             throw .invalidJSON(detail: error.message)
         }

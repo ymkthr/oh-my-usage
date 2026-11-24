@@ -255,9 +255,11 @@ export class UsageStore extends GObject.Object {
         }
 
         const previous = this.#antigravity.account;
+        // Also keeps every refresh from adding a file to agy's own log directory.
+        const logFile = GLib.build_filenamev([GLib.get_tmp_dir(), `oh-my-usage-agy-${GLib.uuid_string_random()}.log`]);
         try {
             // agy treats its cwd as the workspace, so it must not inherit the Shell's.
-            const run = await this.#spawn([path, '-p', '/usage', '--output-format', 'json'],
+            const run = await this.#spawn([path, '-p', '/usage', '--output-format', 'json', '--log-file', logFile],
                 {cwd: GLib.get_tmp_dir(), path: loginPath});
             if (!run.ok) {
                 this.#antigravity = {
@@ -267,7 +269,7 @@ export class UsageStore extends GObject.Object {
                 return;
             }
             try {
-                this.#antigravity = {account: parseAgyUsage(run.stdout), error: null};
+                this.#antigravity = {account: parseAgyUsage(run.stdout, readText(logFile)), error: null};
             } catch (e) {
                 this.#antigravity = {account: previous, error: {kind: 'invalid-json', detail: e.message}};
             }
@@ -281,6 +283,8 @@ export class UsageStore extends GObject.Object {
                         : error,
                 };
             }
+        } finally {
+            GLib.unlink(logFile);
         }
     }
 
@@ -450,4 +454,13 @@ function findExecutable(path, name) {
         .filter(directory => directory.length > 0)
         .map(directory => GLib.build_filenamev([directory, name]))
         .find(candidate => GLib.file_test(candidate, GLib.FileTest.IS_EXECUTABLE)) ?? null;
+}
+
+/** @param {string} path @returns {string}  '' when the file is missing */
+function readText(path) {
+    try {
+        return new TextDecoder().decode(GLib.file_get_contents(path)[1]);
+    } catch {
+        return '';
+    }
 }

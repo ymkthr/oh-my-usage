@@ -216,9 +216,9 @@ const cases = {
         const store = new UsageStore({ompPath: FAKE_OMP, intervalSeconds: 0});
         store.refresh('read');
         await settled(store);
-        eq('agy: account is discovered from the login PATH',
-            [store.state.antigravity.account?.provider, store.state.antigravity.account?.windows.length],
-            ['antigravity-cli', 4]);
+        eq('agy: account is discovered from the login PATH and named from its log',
+            [store.state.antigravity.account?.email, store.state.antigravity.account?.windows.length],
+            ['agy@example.com', 4]);
         store.destroy();
     },
 

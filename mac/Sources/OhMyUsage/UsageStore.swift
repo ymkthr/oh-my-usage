@@ -145,11 +145,14 @@ final class UsageStore {
         }
 
         let previous = state.antigravity.account
+        // Also keeps every refresh from adding a file to agy's own log directory.
+        let logFile = FileManager.default.temporaryDirectory.appendingPathComponent("oh-my-usage-agy-\(UUID().uuidString).log")
+        defer { try? FileManager.default.removeItem(at: logFile) }
         do {
             // agy treats its cwd as the workspace, and a GUI app's cwd is /.
             let run = try await spawn(
                 path,
-                ["-p", "/usage", "--output-format", "json"],
+                ["-p", "/usage", "--output-format", "json", "--log-file", logFile.path],
                 environment: environment,
                 currentDirectoryURL: FileManager.default.temporaryDirectory)
             guard run.status == 0 else {
@@ -159,7 +162,8 @@ final class UsageStore {
                 return
             }
             do {
-                state.antigravity = AntigravityState(account: try script.parseAgyUsage(run.stdout), error: nil)
+                let log = (try? String(contentsOf: logFile, encoding: .utf8)) ?? ""
+                state.antigravity = AntigravityState(account: try script.parseAgyUsage(run.stdout, log: log), error: nil)
             } catch {
                 state.antigravity = AntigravityState(account: previous, error: error)
             }

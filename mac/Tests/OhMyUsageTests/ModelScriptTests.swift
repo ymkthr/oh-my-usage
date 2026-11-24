@@ -46,17 +46,17 @@ final class ModelScriptTests: XCTestCase {
         let model = try loadModel()
         var state = try fixtureState(model)
         state.antigravity = AntigravityState(
-            account: try model.parseAgyUsage(fixture("agy-usage.json")),
+            account: try model.parseAgyUsage(fixture("agy-usage.json"), log: "OAuth: authenticated successfully as agy@example.com\n"),
             error: nil)
         let provider = model.render(state, primaryAccount: "", now: fixtureNow).providers.first { $0.provider == "antigravity-cli" }
 
         XCTAssertEqual(provider?.title, "Antigravity")
-        XCTAssertEqual(provider?.accounts.first?.rows.count, 4)
+        XCTAssertEqual(provider?.accounts.first?.title, "agy@example.com")
         XCTAssertEqual(provider?.accounts.first?.rows.map(\.label), [
-            "Gemini Models · Weekly",
-            "Gemini Models · 5 Hour",
-            "Claude and GPT models · Weekly",
-            "Claude and GPT models · 5 Hour",
+            "Gemini · 7d",
+            "Gemini · 5h",
+            "Claude/GPT · 7d",
+            "Claude/GPT · 5h",
         ])
     }
 

@@ -194,7 +194,8 @@ const PROVIDER_NAMES = new Map([
     ['openrouter', 'OpenRouter'],
 ]);
 
-const WINDOW_LABELS = {'5h': '5 Hour', weekly: 'Weekly'};
+// agy's usage JSON never names the account, so its log is the only source.
+const AGY_SIGNED_IN = /authenticated successfully as (\S+@\S+)/;
 
 const SHORT_NAMES = new Map([
     ['anthropic', 'Claude'],
@@ -248,10 +249,11 @@ export function parseUsage(stdout) {
 }
 
 /**
- * @param {string} stdout
+ * @param {string} stdout  `agy -p /usage --output-format json`
+ * @param {string} log  the same run's `--log-file`
  * @returns {Account}
  */
-export function parseAgyUsage(stdout) {
+export function parseAgyUsage(stdout, log) {
     const wire = parseJson(stdout);
     const groups = wire?.command?.data?.groups;
     if (!Array.isArray(groups))
@@ -265,7 +267,7 @@ export function parseAgyUsage(stdout) {
         orgId: null,
         org: null,
         plan: null,
-        email: null,
+        email: AGY_SIGNED_IN.exec(log)?.[1] ?? null,
         resetCredits: 0,
         windows: groups.flatMap(group => (Array.isArray(group?.buckets) ? group.buckets : [])
             .filter(bucket => bucket?.disabled !== true)
@@ -273,17 +275,29 @@ export function parseAgyUsage(stdout) {
                 const remaining = finiteOrNull(bucket?.remaining_fraction);
                 const parsedReset = typeof bucket?.reset_time === 'string' ? Date.parse(bucket.reset_time) : NaN;
                 const window = stringOrNull(bucket?.window) ?? '';
+                const kind = window === 'weekly' ? '7d' : window;
                 return {
                     id: String(bucket?.id ?? ''),
-                    kind: window === 'weekly' ? '7d' : window,
+                    kind,
                     tier: null,
-                    label: `${String(group?.name ?? '')} · ${WINDOW_LABELS[window] ?? String(bucket?.name ?? '')}`,
+                    label: `${agyGroupLabel(group?.name)} · ${kind}`,
                     usedFraction: remaining === null ? null : clamp01(1 - remaining),
                     spentUsd: null,
                     resetsAt: finiteOrNull(parsedReset),
                 };
             })),
     };
+}
+
+/**
+ * The row label column is 110 px wide, and "Claude and GPT models" alone
+ * overflows it; "Claude/GPT · 7d" fits.
+ * @param {unknown} name
+ * @returns {string}
+ */
+function agyGroupLabel(name) {
+    const full = String(name ?? '');
+    return full.replace(/\s+models?$/i, '').replace(/\s+and\s+/gi, '/') || full;
 }
 
 /**
