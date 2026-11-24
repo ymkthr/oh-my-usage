@@ -132,6 +132,20 @@ function fakeAgy(mode = 'ok') {
     GLib.setenv('FAKE_AGY_MODE', mode, true);
 }
 
+/**
+ * 1.10.0 runs the fake agy and 1.5.9 fails, so only a numeric version
+ * comparison succeeds; a string sort would pick 1.5.9.
+ * @param {string} root
+ */
+function installOmpAgy(root) {
+    const scripts = {'1.5.9': 'echo "old agy" >&2; exit 1', '1.10.0': `exec "${FAKE_AGY_DIR}/agy" "$@"`};
+    for (const [version, body] of Object.entries(scripts)) {
+        GLib.mkdir_with_parents(`${root}/${version}`, 0o755);
+        GLib.file_set_contents(`${root}/${version}/agy`, `#!/bin/sh\n${body}\n`);
+        GLib.chmod(`${root}/${version}/agy`, 0o755);
+    }
+}
+
 /** @returns {{lines: () => string[]}} */
 function fakeShell() {
     const logPath = `${HOME}/fake-shell-${++logCounter}.log`;
@@ -238,6 +252,18 @@ const cases = {
             [true, {kind: 'exit', status: 1, stderrHead: 'fake-agy: unavailable'}]);
         eq('agy: omp state remains successful', [store.state.snapshot !== snapshot, store.state.error], [true, null]);
         store.destroy();
+    },
+
+    async 'without agy on the login PATH the newest omp-installed agy runs'() {
+        fakeOmp();
+        installOmpAgy(`${HOME}/.omp/antigravity-cli/bin`);
+        const store = new UsageStore({ompPath: FAKE_OMP, intervalSeconds: 0});
+        store.refresh('read');
+        await settled(store);
+        eq('agy fallback: 1.10.0 is chosen over 1.5.9',
+            [store.state.antigravity.account?.email, store.state.antigravity.error], ['agy@example.com', null]);
+        store.destroy();
+        removeTree(`${HOME}/.omp`);
     },
 
     async 'empty omp-path resolves to ~/.bun/bin/omp'() {

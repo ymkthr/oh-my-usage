@@ -5,6 +5,10 @@ func defaultOmpPath() -> String {
     URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".bun/bin/omp").path
 }
 
+func defaultOmpAgyRoot() -> String {
+    URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".omp/antigravity-cli/bin").path
+}
+
 /// The markers keep rc-file greetings around the value out of it.
 private let loginPathScript = #"printf "\n__OMU__%s__OMU__\n" "$PATH""#
 
@@ -38,6 +42,7 @@ final class UsageStore {
 
     private let script: ModelScript
     private let watchdogSeconds: TimeInterval
+    private let ompAgyRoot: String
     private var ompPath = defaultOmpPath()
     private var intervalSeconds = 0
     private var queued: Request?
@@ -48,9 +53,11 @@ final class UsageStore {
     /// GUI PATH, so children run under the login shell's PATH, read once.
     private var childPath: String?
 
-    init(script: ModelScript, ompPath: String, intervalSeconds: Int, watchdogSeconds: TimeInterval = 60) {
+    init(script: ModelScript, ompPath: String, intervalSeconds: Int, watchdogSeconds: TimeInterval = 60,
+        ompAgyRoot: String = defaultOmpAgyRoot()) {
         self.script = script
         self.watchdogSeconds = watchdogSeconds
+        self.ompAgyRoot = ompAgyRoot
         state = StoreState(snapshot: nil, policies: script.emptyPolicies(), error: nil, inFlight: false,
             antigravity: AntigravityState(account: nil, error: nil))
         configure(ompPath: ompPath, intervalSeconds: intervalSeconds)
@@ -139,7 +146,7 @@ final class UsageStore {
     }
 
     private func readAntigravity(environment: [String: String]) async {
-        guard let path = findExecutable("agy", in: environment["PATH"] ?? "") else {
+        guard let path = findExecutable("agy", in: environment["PATH"] ?? "") ?? latestOmpAgy() else {
             state.antigravity = AntigravityState(account: nil, error: nil)
             return
         }
@@ -181,6 +188,12 @@ final class UsageStore {
         } catch {
             // Destroy leaves the last published state untouched.
         }
+    }
+
+    private func latestOmpAgy() -> String? {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: ompAgyRoot)) ?? []
+        let installed = names.filter { FileManager.default.isExecutableFile(atPath: "\(ompAgyRoot)/\($0)/agy") }
+        return script.latestAgyVersion(installed).map { "\(ompAgyRoot)/\($0)/agy" }
     }
 
     /// Priorities only order the accounts, so an omp that cannot answer the

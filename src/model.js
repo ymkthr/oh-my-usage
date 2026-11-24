@@ -301,6 +301,30 @@ function agyGroupLabel(name) {
 }
 
 /**
+ * omp installs agy as bin/<version>/agy and leaves older versions behind,
+ * so the highest version is the one omp itself runs.
+ * @param {string[]} names  entries of bin/ that hold an executable agy
+ * @returns {string|null}
+ */
+export function latestAgyVersion(names) {
+    return names
+        .filter(name => /^\d+(\.\d+)*$/.test(name))
+        .reduce((best, name) => (best === null || compareVersions(name, best) > 0 ? name : best), null);
+}
+
+/** @param {string} a @param {string} b @returns {number} */
+function compareVersions(a, b) {
+    const x = a.split('.').map(Number);
+    const y = b.split('.').map(Number);
+    for (let i = 0; i < Math.max(x.length, y.length); i++) {
+        const diff = (x[i] ?? 0) - (y[i] ?? 0);
+        if (diff !== 0)
+            return diff;
+    }
+    return 0;
+}
+
+/**
  * Parses `omp config get auth.accountPolicies --json`.
  * @param {string} stdout
  * @returns {AccountPolicy[]}

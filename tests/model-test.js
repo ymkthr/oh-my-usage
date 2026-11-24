@@ -5,7 +5,7 @@ import Gio from 'gi://Gio';
 import System from 'system';
 
 import {
-    parseAgyUsage, parseUsage, parsePolicies, renderView, levelOf, formatRemaining, formatAge, fmt,
+    latestAgyVersion, parseAgyUsage, parseUsage, parsePolicies, renderView, levelOf, formatRemaining, formatAge, fmt,
     primaryOf, panelWindowsOf, accountTitle, IDENTITY_I18N, parseShellKeys, parseOpenRouterKey, parseOpenRouterActivity,
 } from '../src/model.js';
 
@@ -100,6 +100,9 @@ eq('agy parse: disabled buckets are skipped',
     ]}]}}}), '').windows.map(w => w.id), ['on']);
 throws('agy parse: malformed JSON is rejected', () => parseAgyUsage('{', ''), /not JSON/);
 throws('agy parse: missing groups is rejected', () => parseAgyUsage('{}', ''), /no command.data.groups array/);
+eq('agy version: the numerically highest version wins and non-version names are ignored',
+    latestAgyVersion(['1.5.9', '1.10.0', '1.5.13', 'install.json']), '1.10.0');
+eq('agy version: nothing installed', latestAgyVersion([]), null);
 
 throws('parse: empty stdout (omp failure mode) is rejected', () => parseUsage(''), /empty stdout/);
 throws('parse: whitespace-only stdout is rejected', () => parseUsage(' \n'), /empty stdout/);

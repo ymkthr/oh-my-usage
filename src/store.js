@@ -4,8 +4,8 @@ import GObject from 'gi://GObject';
 import Soup from 'gi://Soup?version=3.0';
 
 import {
-    LOGIN_PATH_SCRIPT, OPENROUTER_KEY_SCRIPT, parseAgyUsage, parseOpenRouterActivity, parseOpenRouterKey, parsePolicies,
-    parseShellKeys, parseUsage,
+    LOGIN_PATH_SCRIPT, OPENROUTER_KEY_SCRIPT, latestAgyVersion, parseAgyUsage, parseOpenRouterActivity, parseOpenRouterKey,
+    parsePolicies, parseShellKeys, parseUsage,
 } from './model.js';
 
 Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async');
@@ -45,6 +45,11 @@ const NO_ANTIGRAVITY = {account: null, error: null};
  */
 export function defaultOmpPath() {
     return GLib.build_filenamev([GLib.get_home_dir(), '.bun', 'bin', 'omp']);
+}
+
+/** @returns {string} */
+function ompAgyRoot() {
+    return GLib.build_filenamev([GLib.get_home_dir(), '.omp', 'antigravity-cli', 'bin']);
 }
 
 /**
@@ -248,7 +253,7 @@ export class UsageStore extends GObject.Object {
 
     async #readAntigravity() {
         const loginPath = await this.#resolveLoginPath();
-        const path = findExecutable(loginPath, 'agy');
+        const path = findExecutable(loginPath, 'agy') ?? latestOmpAgy(ompAgyRoot());
         if (path === null) {
             this.#antigravity = NO_ANTIGRAVITY;
             return;
@@ -463,4 +468,22 @@ function readText(path) {
     } catch {
         return '';
     }
+}
+
+/** @param {string} root @returns {string|null} */
+function latestOmpAgy(root) {
+    let dir;
+    try {
+        dir = GLib.Dir.open(root, 0);
+    } catch {
+        return null;
+    }
+    const versions = [];
+    for (let name = dir.read_name(); name !== null; name = dir.read_name()) {
+        if (GLib.file_test(GLib.build_filenamev([root, name, 'agy']), GLib.FileTest.IS_EXECUTABLE))
+            versions.push(name);
+    }
+    dir.close();
+    const version = latestAgyVersion(versions);
+    return version === null ? null : GLib.build_filenamev([root, version, 'agy']);
 }

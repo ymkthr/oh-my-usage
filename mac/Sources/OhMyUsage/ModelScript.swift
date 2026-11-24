@@ -130,6 +130,7 @@ final class ModelScript {
     private let parseUsageFunction: JSValue
     private let parseAgyUsageFunction: JSValue
     private let parsePoliciesFunction: JSValue
+    private let latestAgyVersionFunction: JSValue
     private let renderFunction: JSValue
 
     convenience init(contentsOf url: URL) throws {
@@ -143,6 +144,7 @@ final class ModelScript {
         parseUsageFunction = context.objectForKeyedSubscript("parseUsage")
         parseAgyUsageFunction = context.objectForKeyedSubscript("parseAgyUsage")
         parsePoliciesFunction = context.objectForKeyedSubscript("parsePolicies")
+        latestAgyVersionFunction = context.objectForKeyedSubscript("latestAgyVersion")
         renderFunction = context.evaluateScript("""
             (snapshot, policies, error, inFlight, antigravity, primaryAccount, now) =>
                 JSON.stringify(renderView({snapshot, policies, error, inFlight, antigravity}, {primaryAccount}, now))
@@ -171,6 +173,11 @@ final class ModelScript {
 
     func parsePolicies(_ stdout: String) -> JSValue? {
         try? call(parsePoliciesFunction, [stdout])
+    }
+
+    func latestAgyVersion(_ names: [String]) -> String? {
+        guard let result = try? call(latestAgyVersionFunction, [names]), result.isString else { return nil }
+        return result.toString()
     }
 
     func render(_ state: StoreState, primaryAccount: String, now: Date) -> View {

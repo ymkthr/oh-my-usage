@@ -10,8 +10,11 @@ final class UsageStoreTests: XCTestCase {
         model = try loadModel()
     }
 
-    private func makeStore(ompPath: String = fakeOmpPath, interval: Int = 0, watchdog: TimeInterval = 60) -> UsageStore {
-        let store = UsageStore(script: model, ompPath: ompPath, intervalSeconds: interval, watchdogSeconds: watchdog)
+    private func makeStore(
+        ompPath: String = fakeOmpPath, interval: Int = 0, watchdog: TimeInterval = 60, ompAgyRoot: String = "/nonexistent"
+    ) -> UsageStore {
+        let store = UsageStore(
+            script: model, ompPath: ompPath, intervalSeconds: interval, watchdogSeconds: watchdog, ompAgyRoot: ompAgyRoot)
         addTeardownBlock { @MainActor in store.destroy() }
         return store
     }
@@ -66,6 +69,27 @@ final class UsageStoreTests: XCTestCase {
         XCTAssertEqual(store.state.antigravity.error, .exit(status: 1, stderrHead: "fake-agy: unavailable"))
         XCTAssertFalse(store.state.snapshot === snapshot)
         XCTAssertNil(store.state.error)
+    }
+
+    /// 1.10.0 runs the fake agy and 1.5.9 fails, so only a numeric version
+    /// comparison succeeds; a string sort would pick 1.5.9.
+    func testWithoutAgyOnLoginPathTheNewestOmpInstalledAgyRuns() async throws {
+        _ = FakeOmp()
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("omp-agy-\(UUID().uuidString)")
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let scripts = ["1.5.9": "echo 'old agy' >&2; exit 1", "1.10.0": "exec '\(fakeAgyDirectory)/agy' \"$@\""]
+        for (version, body) in scripts {
+            let directory = root.appendingPathComponent(version)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let agy = directory.appendingPathComponent("agy")
+            try "#!/bin/sh\n\(body)\n".write(to: agy, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: agy.path)
+        }
+        let store = makeStore(ompAgyRoot: root.path)
+        store.refresh(.read)
+        try await settled(store)
+        XCTAssertNil(store.state.antigravity.error)
+        XCTAssertEqual(render(store).providers.first { $0.title == "Antigravity" }?.accounts.first?.title, "agy@example.com")
     }
 
     func testRequestsDuringARefreshMergeIntoOneFollowUp() async throws {
