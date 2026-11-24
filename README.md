@@ -61,7 +61,7 @@ omp は `~/.bun/bin/omp` にあるものとして実行する。Finder から起
 
 ## Antigravity
 
-ログインシェルの `PATH` に `agy` があれば、メニューに Antigravity の欄も増える。GUI アプリはログインシェルの `PATH` を引き継がないため、`agy` をその `PATH` から探して実行する。`~/.omp/antigravity-cli` にある omp 管理のコピーは `PATH` に入っていないので対象にならない。
+agy (Antigravity CLI) があれば、メニューに Antigravity の欄も増える。`agy -p /usage` が返す Gemini と Claude/GPT の 5 時間枠と週枠を出し、サインイン中のアカウントを見出しにする。agy はまずログインシェルの `PATH` から探し、なければ omp が `~/.omp/antigravity-cli/bin/<バージョン>/agy` に入れたもののうち、いちばん新しいバージョンを使う。omp のプロファイルや `PI_CONFIG_DIR` で置き場所を変えている場合は、この既定の場所しか見ない。
 
 ## ライセンス
 
