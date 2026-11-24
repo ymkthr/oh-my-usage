@@ -59,6 +59,10 @@ omp は `~/.bun/bin/omp` にあるものとして実行する。Finder から起
 
 `OPENROUTER_MANAGEMENT_KEY` に [Management API key](https://openrouter.ai/settings/management-keys) も入れておくと、直近 30 日の日ごとの消費額が縦棒グラフも表示する。
 
+## Antigravity
+
+ログインシェルの `PATH` に `agy` があれば、メニューに Antigravity の欄も増える。GUI アプリはログインシェルの `PATH` を引き継がないため、`agy` をその `PATH` から探して実行する。`~/.omp/antigravity-cli` にある omp 管理のコピーは `PATH` に入っていないので対象にならない。
+
 ## ライセンス
 
 MIT

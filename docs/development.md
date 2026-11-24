@@ -32,6 +32,8 @@ tests/shell/run.sh real    # 本物の omp で同じ確認をする
 | `FAKE_OMP_POLICY_MODE=fail` | 設定の読み出しだけが失敗する。 |
 | `FAKE_OMP_LOG=<path>` | 受け取った引数を 1 回 1 行で `<path>` に追記する。 |
 
+`tests/fixtures/agy` は `tests/fixtures/agy-usage.json` を返す偽の `agy` で、テストは `tests/fixtures` をログインシェルの `PATH` にだけ足して、ストアがそこから見つけることを確かめる。`FAKE_AGY_MODE=fail` なら標準エラーにエラー文を書いて終了コード 1 を返す。`FAKE_AGY_MODE=invalid` なら不正な JSON を標準出力に返す。
+
 ## OpenRouter はテストで本物を呼ばない
 
 `tests/store-test.js` は、開発者自身の鍵で OpenRouter を呼ばないように、最初に `OPENROUTER_API_KEY` と `OPENROUTER_MANAGEMENT_KEY` を消す。ログインシェルの代わりには、渡されたスクリプトを `FAKE_OPENROUTER_KEY` と `FAKE_OPENROUTER_MANAGEMENT_KEY` を鍵として実行するだけの偽シェルを `SHELL` に入れる。OpenRouter の代わりはローカルの `Soup.Server` で、`/key` と `/activity` に別々の応答を返す。
