@@ -81,18 +81,18 @@ eq('agy parse: account identity comes from the log',
     ['antigravity-cli:1', 'antigravity-cli', 1, 'agy@example.com']);
 eq('agy parse: a log without the sign-in line leaves the email unknown',
     parseAgyUsage(agyFixtureText, '').email, null);
-eq('agy parse: labels name the model group and the window, kinds and fractions',
+eq('agy parse: each group lists its 5h window above its 7d window, with labels, kinds and fractions',
     agyAccount.windows.map(w => [w.id, w.kind, w.label, w.usedFraction]),
     [
-        ['gemini-weekly', '7d', 'Gemini · 7d', 1 - 0.931438148021698],
         ['gemini-5h', '5h', 'Gemini · 5h', 1 - 0.7457525730133057],
-        ['3p-weekly', '7d', 'Claude/GPT · 7d', 0],
+        ['gemini-weekly', '7d', 'Gemini · 7d', 1 - 0.931438148021698],
         ['3p-5h', '5h', 'Claude/GPT · 5h', 0],
+        ['3p-weekly', '7d', 'Claude/GPT · 7d', 0],
     ]);
 eq('agy parse: reset timestamps are milliseconds',
     agyAccount.windows.map(w => w.resetsAt),
-    [Date.parse('2026-12-01T04:29:01Z'), Date.parse('2026-11-24T09:29:01Z'),
-        Date.parse('2026-12-01T07:02:37Z'), Date.parse('2026-11-24T12:02:37Z')]);
+    [Date.parse('2026-11-24T09:29:01Z'), Date.parse('2026-12-01T04:29:01Z'),
+        Date.parse('2026-11-24T12:02:37Z'), Date.parse('2026-12-01T07:02:37Z')]);
 eq('agy parse: disabled buckets are skipped',
     parseAgyUsage(JSON.stringify({command: {data: {groups: [{name: 'x', buckets: [
         {id: 'on', window: '5h', name: 'On', remaining_fraction: 1},
@@ -234,7 +234,7 @@ const agyView = renderView({...fresh, antigravity: {account: agyAccount, error: 
 const agyProvider = agyView.providers.find(provider => provider.provider === 'antigravity-cli');
 eq('agy view: the section is titled by the signed-in account and lists all quota rows',
     [agyProvider?.title, agyProvider?.accounts[0].title, agyProvider?.accounts[0].rows.map(row => row.label)],
-    ['Antigravity', 'agy@example.com', ['Gemini · 7d', 'Gemini · 5h', 'Claude/GPT · 7d', 'Claude/GPT · 5h']]);
+    ['Antigravity', 'agy@example.com', ['Gemini · 5h', 'Gemini · 7d', 'Claude/GPT · 5h', 'Claude/GPT · 7d']]);
 const agyErrorView = renderView({
     ...fresh, antigravity: {account: agyAccount, error: {kind: 'exit', status: 1, stderrHead: 'unavailable'}},
 }, {primaryAccount: ''}, now);
