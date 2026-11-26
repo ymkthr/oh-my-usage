@@ -53,10 +53,10 @@ final class ModelScriptTests: XCTestCase {
         XCTAssertEqual(provider?.title, "Antigravity")
         XCTAssertEqual(provider?.accounts.first?.title, "agy@example.com")
         XCTAssertEqual(provider?.accounts.first?.rows.map(\.label), [
-            "Gemini · 7d",
             "Gemini · 5h",
-            "Claude/GPT · 7d",
+            "Gemini · 7d",
             "Claude/GPT · 5h",
+            "Claude/GPT · 7d",
         ])
     }
 
