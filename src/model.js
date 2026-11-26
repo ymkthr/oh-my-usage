@@ -285,7 +285,9 @@ export function parseAgyUsage(stdout, log) {
                     spentUsd: null,
                     resetsAt: finiteOrNull(parsedReset),
                 };
-            })),
+            })
+            // agy lists the weekly bucket first; other providers show the 5-hour window on top.
+            .sort((a, b) => (a.kind === '5h' ? 0 : 1) - (b.kind === '5h' ? 0 : 1))),
     };
 }
 
